@@ -45,7 +45,6 @@ testReset
   , redeemADAPaperVend
 
   , reportingInitialized
-  , reportingElectroncrash
 
   , getSlotsDuration
   , getVersion
@@ -96,7 +95,6 @@ redeemADA              = "Redeem ADA."
 redeemADAPaperVend     = "Redeem ADA, paper vending."
 
 reportingInitialized   = "Send node's report on initialization time."
-reportingElectroncrash = "Send node's report on electron crash info."
 
 getSlotsDuration       = "Get blockchain slot duration in milliseconds."
 getVersion             = "Get current version of the node."

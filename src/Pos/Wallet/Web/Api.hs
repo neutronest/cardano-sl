@@ -49,7 +49,6 @@ module Pos.Wallet.Web.Api
        , RedeemADAPaperVend
 
        , ReportingInitialized
-       , ReportingElectroncrash
 
        , GetSlotsDuration
        , GetVersion
@@ -308,12 +307,6 @@ type ReportingInitialized =
     :> ReqBody '[JSON] CInitialized
     :> WRes Post ()
 
-type ReportingElectroncrash =
-       "reporting"
-    :> "electroncrash"
-    :> MultipartForm CElectronCrashReport
-    :> WRes Post ()
-
 -------------------------------------------------------------------------
 -- Settings
 -------------------------------------------------------------------------
@@ -442,8 +435,6 @@ type WalletApi = ApiPrefix :> (
      -- Reporting
      -------------------------------------------------------------------------
      ReportingInitialized
-    :<|>
-     ReportingElectroncrash
     :<|>
      -------------------------------------------------------------------------
      -- Settings

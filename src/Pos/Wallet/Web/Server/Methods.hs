@@ -91,7 +91,7 @@ import           Pos.DB.Class                     (gsAdoptedBVData)
 import           Pos.Genesis                      (genesisDevHdwSecretKeys)
 import           Pos.Reporting.MemState           (HasReportServers (..),
                                                    HasReportingContext (..))
-import           Pos.Reporting.Methods            (sendReport, sendReportNodeNologs)
+import           Pos.Reporting.Methods            (reportInfo)
 import           Pos.Txp                          (TxFee (..))
 import           Pos.Txp.Core                     (TxAux (..), TxOut (..), TxOutAux (..),
                                                    TxOutDistribution)
@@ -394,8 +394,6 @@ servantHandlers sendActions =
     :<|>
 
      reportingInitialized
-    :<|>
-     reportingElectroncrash
     :<|>
 
      (blockchainSlotDuration <&> fromIntegral)
@@ -1172,28 +1170,7 @@ redeemAdaInternal SendActions {..} passphrase cAccId seedBs = do
     noIncomingTx = InternalError "Can't report incoming transaction"
 
 reportingInitialized :: WalletWebMode m => CInitialized -> m ()
-reportingInitialized cinit = do
-    sendReportNodeNologs (RInfo $ show cinit) `catchAll` handler
-  where
-    handler e =
-        logError $
-        sformat ("Didn't manage to report initialization time "%shown%
-                 " because of exception "%shown) cinit e
-
-reportingElectroncrash :: forall m. WalletWebMode m => CElectronCrashReport -> m ()
-reportingElectroncrash celcrash = do
-    servers <- view (reportingContext . reportServers)
-    errors <- fmap lefts $ forM servers $ \serv ->
-        try $ sendReport [fdFilePath $ cecUploadDump celcrash]
-                         []
-                         (RInfo $ show celcrash)
-                         "daedalus"
-                         (toString serv)
-    whenNotNull errors $ handler . NE.head
-  where
-    fmt = ("Didn't manage to report electron crash "%shown%" because of exception "%shown)
-    handler :: SomeException -> m ()
-    handler e = logError $ sformat fmt celcrash e
+reportingInitialized cinit = reportInfo False (show cinit)
 
 importWallet
     :: WalletWebMode m

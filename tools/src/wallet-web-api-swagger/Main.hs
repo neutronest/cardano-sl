@@ -215,7 +215,6 @@ swaggerSpecForWalletApi = toSwagger W.walletApi
     & wop @W.RedeemADAPaperVend     . description ?~ D.redeemADAPaperVend
 
     & wop @W.ReportingInitialized   . description ?~ D.reportingInitialized
-    & wop @W.ReportingElectroncrash . description ?~ D.reportingElectroncrash
 
     & wop @W.GetSlotsDuration       . description ?~ D.getSlotsDuration
     & wop @W.GetVersion             . description ?~ D.getVersion
