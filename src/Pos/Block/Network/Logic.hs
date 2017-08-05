@@ -67,7 +67,7 @@ import           Pos.DB.Block               (blkGetHeader)
 import qualified Pos.DB.DB                  as DB
 import           Pos.Exception              (cardanoExceptionFromException,
                                              cardanoExceptionToException)
-import           Pos.Reporting.Methods      (reportMisbehaviourSilent)
+import           Pos.Reporting.Methods      (reportMisbehaviour)
 import           Pos.Ssc.Class              (SscHelpersClass, SscWorkersClass)
 import           Pos.Util                   (inAssertMode, _neHead, _neLast)
 import           Pos.Util.Chrono            (NE, NewestFirst (..), OldestFirst (..))
@@ -521,7 +521,7 @@ applyWithRollback nodeId enqueue toApply lca toRollback = do
     reportRollback =
         recoveryCommGuard $ do
             logDebug "Reporting rollback happened"
-            reportMisbehaviourSilent False $
+            reportMisbehaviour False $
                 sformat reportF nodeId toRollbackHashes toApplyHashes
     panicBrokenLca = error "applyWithRollback: nothing after LCA :<"
     toApplyAfterLca =

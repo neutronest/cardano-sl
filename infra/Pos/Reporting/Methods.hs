@@ -3,11 +3,9 @@
 -- | Methods of reporting different unhealthy behaviour to server.
 
 module Pos.Reporting.Methods
-       ( sendReportNode
-       , sendReportNodeNologs
-       , getNodeInfo
+       ( reportError
+       , reportInfo
        , reportMisbehaviour
-       , reportMisbehaviourSilent
        , reportingFatal
        , sendReport
        , retrieveLogFiles
@@ -145,35 +143,63 @@ getNodeInfo = do
   where
     ipExternal (IPv4 w) =
         not $ ipv4Local w || w == 0 || w == 16777343 -- the last is 127.0.0.1
-    outputF = ("{ nodeParams: '"%stext%"', peers: '"%stext%"' }")
+    outputF = ("{ nodeIps: '"%stext%"', peers: '"%stext%"' }")
 
+logReportType :: WithLogger m => ReportType -> m ()
+logReportType (RCrash i) = logError $ "Reporting crash with code " <> show i
+logReportType (RError reason) =
+    logError $ "Reporting error with reason \"" <> reason <> "\""
+logReportType (RMisbehavior True reason) =
+    logError $ "Reporting critical misbehavour with reason \"" <> reason <> "\""
+logReportType (RMisbehavior False reason) =
+    logWarning $ "Reporting non-critical misbehavour with reason \"" <> reason <> "\""
+logReportType (RInfo text) =
+    logWarning $ "Reporting info with text \"" <> reason <> "\""
 
--- | Reports misbehaviour given reason string. Effectively designed
--- for 'WorkMode' context.
-reportMisbehaviour
-    :: (MonadReporting ctx m)
-    => Bool -> Text -> m ()
-reportMisbehaviour isCritical reason = do
-    logError $ "Reporting misbehaviour \"" <> reason <> "\""
-    nodeInfo <- getNodeInfo
-    sendReportNode $
-        RMisbehavior isCritical $ sformat misbehF reason nodeInfo
-  where
-    misbehF = stext%", nodeInfo: "%stext
+extendRTDesc :: Text -> ReportType -> ReportType
+extendRTDesc text (RError reason) = RError $ reason <> text
+extendRTDesc text (RMisbehavior isCritical reason) = RMisbehavior isCritical $ reason <> text
+extendRTDesc text' (RInfo text) = RInfo $ text <> text'
+extendRTDesc _ x = x
 
 -- FIXME catch and squelch *all* exceptions? Probably a bad idea.
+-- georgeee: I don't think it's a bad idea, reporting shouldn't be
+--           an operation, exceptions of which we would like to consider
 -- | Report misbehaviour, but catch all errors inside
-reportMisbehaviourSilent
+reportNode
     :: forall ctx m . (MonadReporting ctx m)
-    => Bool -> Text -> m ()
-reportMisbehaviourSilent isCritical reason =
-    reportMisbehaviour isCritical reason `catch` handler
+    => Bool -> Bool -> ReportType -> m ()
+reportNode sendLogs extendWithNodeInfo reportType =
+    reportNodeDo `catch` handler
   where
+    send' = if sendLogs then sendReportNode else sendReportNodeNologs
+    reportNodeDo = do
+        logReportType reportType
+        if extendWithNodeInfo
+           then do
+              nodeInfo <- getNodeInfo
+              send' $ extendRTDesc (", nodeInfo: " <> nodeInfo) reportType
+           else send' reportType
     handler :: SomeException -> m ()
     handler e =
         logError $
-        sformat ("Didn't manage to report misbehaveour "%stext%
-                 " because of exception "%shown) reason e
+        sformat ("Didn't manage to report "%shown%
+                 " because of exception '"%shown%"' raised while sending") reportType e
+
+reportMisbehaviour
+    :: forall ctx m . (MonadReporting ctx m)
+    => Bool -> Text -> m ()
+reportMisbehaviour isCritical = reportNode True True . RMisbehavior isCritical
+
+reportInfo
+    :: forall ctx m . (MonadReporting ctx m)
+    => Bool -> Text -> m ()
+reportInfo sendLogs = reportNode sendLogs True . RInfo
+
+reportError
+    :: forall ctx m . (MonadReporting ctx m)
+    => Text -> m ()
+reportError = reportNode True True . RError
 
 -- | Execute action, report 'CardanoFatalError' and 'FatalError' if it
 -- happens and rethrow. Errors related to reporting itself are caught,
@@ -186,20 +212,10 @@ reportingFatal action =
   where
     andThrow :: (Exception e, MonadThrow n) => (e -> n x) -> e -> n y
     andThrow foo e = foo e >> throwM e
-    report reason = do
-        logDebug $ "Reporting error \"" <> reason <> "\""
-        let errorF = stext%", nodeInfo: "%stext
-        nodeInfo <- getNodeInfo
-        sendReportNode (RError $ sformat errorF reason nodeInfo) `catch`
-            handlerSend reason
-    handlerSend reason (e :: SomeException) =
-        logError $
-        sformat ("Didn't manage to report error "%stext%
-                 " because of exception '"%shown%"' raised while sending") reason e
     handler1 = andThrow $ \(e :: CardanoFatalError) ->
-        report (pretty e)
+        reportError (pretty e)
     handler2 = andThrow $ \(ErrorCall reason) ->
-        report ("FatalError/error: " <> show reason)
+        reportError ("FatalError/error: " <> show reason)
 
 
 ----------------------------------------------------------------------------

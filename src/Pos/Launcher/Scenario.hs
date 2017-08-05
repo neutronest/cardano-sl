@@ -33,7 +33,7 @@ import qualified Pos.GState          as GS
 import           Pos.Launcher.Resource (NodeResources (..))
 import           Pos.Lrc.DB          as LrcDB
 import           Pos.Network.Types   (NetworkConfig (..), topologyRunKademlia)
-import           Pos.Reporting       (reportMisbehaviourSilent)
+import           Pos.Reporting       (reportMisbehaviour)
 import           Pos.Security        (SecurityWorkersClass)
 import           Pos.Shutdown        (waitForWorkers)
 import           Pos.Slotting        (waitSystemStart)
@@ -106,7 +106,7 @@ runNode' NodeResources {..} workers' plugins' = ActionSpec $ \vI sendActions -> 
     -- FIXME [CSL-1340]: it should be reported as 'RError'.
     reportHandler (SomeException e) = do
         loggerName <- getLoggerName
-        reportMisbehaviourSilent False $
+        reportMisbehaviour False $
             sformat ("Worker/plugin with logger name "%shown%
                     " failed with exception: "%shown)
             loggerName e

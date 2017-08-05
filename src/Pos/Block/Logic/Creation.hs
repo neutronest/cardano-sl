@@ -51,7 +51,7 @@ import           Pos.Delegation             (DelegationVar, DlgPayload (getDlgPa
 import           Pos.Exception              (assertionFailed, reportFatalError)
 import           Pos.Lrc                    (LrcContext, LrcError (..))
 import qualified Pos.Lrc.DB                 as LrcDB
-import           Pos.Reporting              (reportMisbehaviourSilent, reportingFatal)
+import           Pos.Reporting              (reportMisbehaviour, reportingFatal)
 import           Pos.Ssc.Class              (Ssc (..), SscHelpersClass (sscDefaultPayload, sscStripPayload),
                                              SscLocalDataClass)
 import           Pos.Ssc.Extra              (MonadSscMem, sscGetLocalPayload,
@@ -334,7 +334,7 @@ applyCreatedBlock pske createdBlock = applyCreatedBlockDo False createdBlock
         let message = sformat ("We've created bad main block: "%stext) reason
         logError message
         -- FIXME [CSL-1340]: it should be reported as 'RError'.
-        reportMisbehaviourSilent False message
+        reportMisbehaviour False message
         logDebug $ "Clearing mempools"
         clearMempools
         logDebug $ "Creating empty block"
