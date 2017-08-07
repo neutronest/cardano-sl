@@ -23,7 +23,6 @@ import           Universum
 import           Control.Concurrent               (forkFinally)
 import           Control.Lens                     (each, has, ix, makeLenses, traversed,
                                                    (.=))
-import           Control.Monad.Catch              (SomeException, try)
 import qualified Control.Monad.Catch              as E
 import           Control.Monad.State              (runStateT)
 import qualified Data.Aeson                       as A
@@ -39,24 +38,20 @@ import qualified Data.Text.Buildable
 import           Data.Time.Clock.POSIX            (getPOSIXTime)
 import           Data.Time.Units                  (Microsecond, Second)
 import           Ether.Internal                   (HasLens (..))
-import           Formatting                       (bprint, build, sformat, shown, stext,
-                                                   (%))
+import           Formatting                       (bprint, build, sformat, stext, (%))
 import qualified Formatting                       as F
 import           Network.Wai                      (Application)
-import           Pos.ReportServer.Report          (ReportType (RInfo))
 import           Serokell.AcidState.ExtendedState (ExtendedState)
 import           Serokell.Util                    (threadDelay)
 import qualified Serokell.Util.Base64             as B64
 import           Serokell.Util.Text               (listJson)
 import           Servant.API                      ((:<|>) ((:<|>)),
                                                    FromHttpApiData (parseUrlPiece))
-import           Servant.Multipart                (fdFilePath)
 import           Servant.Server                   (Handler, Server, ServerT, runHandler,
                                                    serve)
 import           Servant.Utils.Enter              ((:~>) (..), enter)
 import           System.IO.Error                  (isDoesNotExistError)
-import           System.Wlog                      (logDebug, logError, logInfo,
-                                                   logWarning)
+import           System.Wlog                      (logDebug, logInfo, logWarning)
 
 import           Pos.Aeson.ClientTypes            ()
 import           Pos.Aeson.WalletBackup           ()
@@ -89,8 +84,6 @@ import           Pos.Crypto                       (EncryptedSecretKey, PassPhras
                                                    withSafeSigner)
 import           Pos.DB.Class                     (gsAdoptedBVData)
 import           Pos.Genesis                      (genesisDevHdwSecretKeys)
-import           Pos.Reporting.MemState           (HasReportServers (..),
-                                                   HasReportingContext (..))
 import           Pos.Reporting.Methods            (reportInfo)
 import           Pos.Txp                          (TxFee (..))
 import           Pos.Txp.Core                     (TxAux (..), TxOut (..), TxOutAux (..),
@@ -122,8 +115,7 @@ import           Pos.Wallet.Web.Backup            (AccountMetaBackup (..),
 import           Pos.Wallet.Web.ClientTypes       (AccountId (..), Addr, CAccount (..),
                                                    CAccountId (..), CAccountInit (..),
                                                    CAccountMeta (..), CAddress (..),
-                                                   CCoin, CElectronCrashReport (..), CId,
-                                                   CInitialized,
+                                                   CCoin, CId, CInitialized,
                                                    CPaperVendWalletRedeem (..),
                                                    CPassPhrase (..), CProfile,
                                                    CProfile (..), CTx (..), CTxId,
@@ -1169,6 +1161,7 @@ redeemAdaInternal SendActions {..} passphrase cAccId seedBs = do
   where
     noIncomingTx = InternalError "Can't report incoming transaction"
 
+-- REPORT:INFO Time to initialize Daedalus info (from start to main screen, from start to network connection established)
 reportingInitialized :: WalletWebMode m => CInitialized -> m ()
 reportingInitialized cinit = reportInfo False (show cinit)
 

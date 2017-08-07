@@ -36,7 +36,6 @@ module Pos.Wallet.Web.ClientTypes
       , mkCCoin
       , coinFromCCoin
       , PassPhraseLU
-      , CElectronCrashReport (..)
       , NotifyEvent (..)
       , WithDerivationPath (..)
       , Wal (..)
@@ -539,30 +538,3 @@ data CInitialized = CInitialized
     , cPreInit   :: Word -- ^ Time passed from beginning to network
                             -- connection with peers established.
     } deriving (Show, Generic)
-
-
-data CElectronCrashReport = CElectronCrashReport
-    { cecVersion     :: Text
-    , cecPlatform    :: Text
-    , cecProcessType :: Text
-    , cecGuid        :: Text
-    , cecVersionJson :: Text
-    , cecProductName :: Text
-    , cecProd        :: Text
-    , cecCompanyName :: Text
-    , cecUploadDump  :: FileData
-    } deriving (Show, Generic)
-
-instance FromMultipart CElectronCrashReport where
-    fromMultipart form = do
-        let look t = lookupInput t form
-        CElectronCrashReport
-          <$> look "ver"
-          <*> look "platform"
-          <*> look "process_type"
-          <*> look "guid"
-          <*> look "_version"
-          <*> look "_productName"
-          <*> look "prod"
-          <*> look "_companyName"
-          <*> lookupFile "upload_file_minidump" form

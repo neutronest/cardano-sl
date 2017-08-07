@@ -132,7 +132,6 @@ instance ToSchema      W.CAddress
 instance ToSchema      W.CPaperVendWalletRedeem
 instance ToSchema      W.CCoin
 instance ToSchema      W.CInitialized
-instance ToSchema      W.CElectronCrashReport
 instance ToSchema      W.CUpdateInfo
 instance ToSchema      SoftwareVersion
 instance ToSchema      ApplicationName

@@ -59,7 +59,6 @@ module Pos.Wallet.Web.Api
 import           Control.Monad.Catch        (try)
 import           Servant.API                ((:<|>), (:>), Capture, Delete, Get, JSON,
                                              Post, Put, QueryParam, ReqBody, Verb)
-import           Servant.Multipart          (MultipartForm)
 import           Servant.Server             (Handler (..))
 import           Universum
 
@@ -68,7 +67,7 @@ import           Pos.Util.Servant           (CCapture, CQueryParam, CReqBody,
                                              DCQueryParam, ModifiesApiRes (..),
                                              ReportDecodeError (..), VerbMod)
 import           Pos.Wallet.Web.ClientTypes (Addr, CAccount, CAccountId, CAccountInit, CCoin,
-                                             CAccountMeta, CAddress, CElectronCrashReport,
+                                             CAccountMeta, CAddress,
                                              CId, CInitialized, CPaperVendWalletRedeem,
                                              CPassPhrase, CProfile, CTx, CTxId, CTxMeta,
                                              CUpdateInfo, CWallet, CWalletInit,
