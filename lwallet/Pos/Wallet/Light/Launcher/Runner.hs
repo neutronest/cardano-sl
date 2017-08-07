@@ -16,6 +16,7 @@ import           System.Wlog                     (WithLogger, logDebug, logInfo)
 
 import           Pos.Communication               (ActionSpec (..), MkListeners, NodeId,
                                                   OutSpecs, WorkerSpec)
+import qualified Pos.DB                          as DB
 import           Pos.Discovery                   (findPeers)
 import           Pos.Launcher                    (BaseParams (..), LoggingParams (..),
                                                   runServer)
@@ -79,29 +80,21 @@ runRawStaticPeersWallet
     -> (ActionSpec LightWalletMode a, OutSpecs)
     -> Production a
 runRawStaticPeersWallet transport peers WalletParams {..}
-                        listeners (ActionSpec action, outs) =
-    bracket openDB closeDB $ \db -> do
-        keyData <- keyDataFromFile wpKeyFilePath
-        flip Mtl.runReaderT
-            ( LightWalletContext
-                keyData
-                db
-                emptyReportingContext
-                peers
-                JsonLogDisabled
-                lpRunnerTag
-                (mkGenesisTxpContext wpGenesisUtxo ^. gtcStakeholders)
-            ) .
-            runServer_ transport listeners outs . ActionSpec $ \vI sa ->
-            logInfo "Started wallet, joining network" >> action vI sa
-  where
-    LoggingParams {..} = bpLoggingParams wpBaseParams
-    openDB =
-        maybe
-            (openMemState wpGenesisUtxo)
-            (openState wpRebuildDb wpGenesisUtxo)
-            wpDbPath
-    closeDB = closeState
+                        listeners (ActionSpec action, outs) = do
+    keyData <- keyDataFromFile wpKeyFilePath
+    db <- DB.getNodeDBs
+    flip Mtl.runReaderT
+        ( LightWalletContext
+            keyData
+            db
+            emptyReportingContext
+            peers
+            JsonLogDisabled
+            lpRunnerTag
+            (mkGenesisTxpContext wpGenesisUtxo ^. gtcStakeholders)
+        ) .
+        runServer_ transport listeners outs . ActionSpec $ \vI sa ->
+        logInfo "Started wallet, joining network" >> action vI sa
 
 runServer_
     :: (MonadIO m, MonadMockable m, MonadFix m, WithLogger m)

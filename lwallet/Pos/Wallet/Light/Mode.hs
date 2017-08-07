@@ -21,18 +21,39 @@ import           System.Wlog                      (HasLoggerName (..), LoggerNam
 
 import           Pos.Block.BListener              (MonadBListener (..), onApplyBlocksStub,
                                                    onRollbackBlocksStub)
-import           Pos.Client.Txp.Balances          (MonadBalances (..))
-import           Pos.Client.Txp.History           (MonadTxHistory (..))
+import           Pos.Block.Core                   (Block, BlockHeader)
+import           Pos.Block.Types                  (Undo)
+import           Pos.Client.Txp.Balances          (MonadBalances (..), getBalanceDefault,
+                                                   getOwnUtxosDefault)
+import           Pos.Client.Txp.History           (MonadTxHistory (..),
+                                                   getBlockHistoryDefault,
+                                                   getLocalHistoryDefault)
 import           Pos.Communication.Types.Protocol (NodeId)
-import           Pos.Core                         (SlotId (..))
+import           Pos.Core                         (HasPrimaryKey (..), IsHeader,
+                                                   SlotId (..))
 import           Pos.DB                           (MonadGState (..))
+import           Pos.DB.Block                     (dbGetBlockDefault,
+                                                   dbGetBlockSscDefault,
+                                                   dbGetHeaderDefault,
+                                                   dbGetHeaderSscDefault,
+                                                   dbGetUndoDefault, dbGetUndoSscDefault,
+                                                   dbPutBlundDefault)
+import           Pos.DB.Class                     (MonadBlockDBGeneric (..),
+                                                   MonadBlockDBGenericWrite (..),
+                                                   MonadDB (..), MonadDBRead (..))
+import           Pos.DB.DB                        (gsAdoptedBVDataDefault)
+import           Pos.DB.Rocks                     (NodeDBs, dbDeleteDefault, dbGetDefault,
+                                                   dbIterSourceDefault, dbPutDefault,
+                                                   dbWriteBatchDefault)
 import           Pos.Discovery                    (MonadDiscovery (..))
 import           Pos.Reporting.MemState           (ReportingContext)
 import           Pos.Slotting                     (MonadSlots (..),
                                                    currentTimeSlottingSimple)
 import           Pos.Slotting.MemState            (MonadSlotsData (..))
+import           Pos.Ssc.Class.Types              (SscBlock)
 import           Pos.Ssc.GodTossing               (SscGodTossing)
 import           Pos.Txp                          (GenesisStakeholders)
+import           Pos.Util                         (Some (..))
 import           Pos.Util.JsonLog                 (HasJsonLogConfig (..), JsonLogConfig,
                                                    jsonLogDefault)
 import           Pos.Util.LoggerName              (HasLoggerName' (..),
@@ -42,11 +63,7 @@ import           Pos.Util.TimeWarp                (CanJsonLog (..))
 import           Pos.Util.UserSecret              (HasUserSecret (..))
 import           Pos.Util.Util                    (postfixLFields)
 import           Pos.Wallet.KeyStorage            (KeyData)
-import           Pos.Wallet.Light.Redirect        (getBalanceWallet,
-                                                   getBlockHistoryWallet,
-                                                   getLocalHistoryWallet,
-                                                   getOwnUtxosWallet, saveTxWallet)
-import           Pos.Wallet.Light.State.Acidic    (WalletState)
+import           Pos.Wallet.Light.Redirect        (saveTxWallet)
 import           Pos.Wallet.Light.State.Core      (gsAdoptedBVDataWallet)
 import           Pos.Wallet.WalletMode            (MonadBlockchainInfo (..),
                                                    MonadUpdates (..))
@@ -56,7 +73,7 @@ type LightWalletSscType = SscGodTossing
 
 data LightWalletContext = LightWalletContext
     { lwcKeyData          :: !KeyData
-    , lwcWalletState      :: !WalletState
+    , lwcNodeDBs          :: !NodeDBs
     , lwcReportingContext :: !ReportingContext
     , lwcDiscoveryPeers   :: !(Set NodeId)
     , lwcJsonLogConfig    :: !JsonLogConfig
@@ -66,6 +83,9 @@ data LightWalletContext = LightWalletContext
 
 makeLensesWith postfixLFields ''LightWalletContext
 
+instance HasLens NodeDBs LightWalletContext NodeDBs where
+    lensOf = lwcNodeDBs_L
+
 type LightWalletMode = Mtl.ReaderT LightWalletContext Production
 
 instance HasUserSecret LightWalletContext where
@@ -73,9 +93,6 @@ instance HasUserSecret LightWalletContext where
 
 instance HasLens GenesisStakeholders LightWalletContext GenesisStakeholders where
     lensOf = lwcGenStakeholders_L
-
-instance HasLens WalletState LightWalletContext WalletState where
-    lensOf = lwcWalletState_L
 
 instance HasLoggerName' LightWalletContext where
     loggerName = lwcLoggerName_L
@@ -124,14 +141,38 @@ instance MonadSlots LightWalletMode where
     getCurrentSlotInaccurate = pure (SlotId 0 minBound)
     currentTimeSlotting = currentTimeSlottingSimple
 
+instance MonadDBRead LightWalletMode where
+    dbGet = dbGetDefault
+    dbIterSource = dbIterSourceDefault
+
+instance MonadDB LightWalletMode where
+    dbPut = dbPutDefault
+    dbWriteBatch = dbWriteBatchDefault
+    dbDelete = dbDeleteDefault
+
+instance MonadBlockDBGenericWrite (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode where
+    dbPutBlund = dbPutBlundDefault
+
+instance MonadBlockDBGeneric (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode
+  where
+    dbGetBlock  = dbGetBlockDefault @LightWalletSscType
+    dbGetUndo   = dbGetUndoDefault @LightWalletSscType
+    dbGetHeader = dbGetHeaderDefault @LightWalletSscType
+
+instance MonadBlockDBGeneric (Some IsHeader) (SscBlock LightWalletSscType) () LightWalletMode
+  where
+    dbGetBlock  = dbGetBlockSscDefault @LightWalletSscType
+    dbGetUndo   = dbGetUndoSscDefault @LightWalletSscType
+    dbGetHeader = dbGetHeaderSscDefault @LightWalletSscType
+
 instance MonadGState LightWalletMode where
-    gsAdoptedBVData = gsAdoptedBVDataWallet
+    gsAdoptedBVData = gsAdoptedBVDataDefault
 
 instance MonadBalances LightWalletMode where
-    getOwnUtxos = getOwnUtxosWallet
-    getBalance = getBalanceWallet
+    getOwnUtxos = getOwnUtxosDefault
+    getBalance = getBalanceDefault
 
 instance MonadTxHistory LightWalletSscType LightWalletMode where
-    getBlockHistory = getBlockHistoryWallet
-    getLocalHistory = getLocalHistoryWallet
+    getBlockHistory = getBlockHistoryDefault @LightWalletSscType
+    getLocalHistory = getLocalHistoryDefault
     saveTx = saveTxWallet

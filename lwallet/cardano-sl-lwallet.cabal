@@ -46,6 +46,7 @@ executable cardano-wallet
                      , cardano-sl-db
                      , cardano-sl-update
                      , cardano-sl-infra
+                     , cardano-sl-ssc
                      , cardano-sl
                      , data-default
                      , dlist
