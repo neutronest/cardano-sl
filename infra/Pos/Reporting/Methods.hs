@@ -34,7 +34,7 @@ import           System.FilePath          (takeFileName)
 import           System.Info              (arch, os)
 import           System.IO                (hClose)
 import           System.Wlog              (LoggerConfig (..), WithLogger, hwFilePath,
-                                           lcTree, logDebug, logError, logInfo, ltFiles,
+                                           lcTree, logError, logInfo, logWarning, ltFiles,
                                            ltSubloggers, retrieveLogContent)
 
 import           Paths_cardano_sl_infra   (version)
@@ -154,7 +154,7 @@ logReportType (RMisbehavior True reason) =
 logReportType (RMisbehavior False reason) =
     logWarning $ "Reporting non-critical misbehavour with reason \"" <> reason <> "\""
 logReportType (RInfo text) =
-    logWarning $ "Reporting info with text \"" <> reason <> "\""
+    logWarning $ "Reporting info with text \"" <> text <> "\""
 
 extendRTDesc :: Text -> ReportType -> ReportType
 extendRTDesc text (RError reason) = RError $ reason <> text
@@ -253,14 +253,14 @@ sendReport logFiles rawLogs reportType appName reportServerUri = do
         let pathsPart = map partFile' existingFiles
         let payloadPart =
                 partLBS "payload"
-                (encode $ reportInfo curTime $ existingFiles ++ memlogFiles)
+                (encode $ rInfo curTime $ existingFiles ++ memlogFiles)
         e <- try $ liftIO $ post (reportServerUri <//> "report") $
              payloadPart : (memlogPart ++ pathsPart)
         whenLeft e $ \(e' :: SomeException) -> throwM $ SendingError (show e')
   where
     partFile' fp = partFile (toFileName fp) fp
     toFileName = toText . takeFileName
-    reportInfo curTime files =
+    rInfo curTime files =
         ReportInfo
         { rApplication = appName
         -- We are using version of 'cardano-sl-infra' here. We agreed

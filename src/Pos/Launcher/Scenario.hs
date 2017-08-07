@@ -12,38 +12,38 @@ module Pos.Launcher.Scenario
 
 import           Universum
 
-import           Control.Lens        (views)
-import           Development.GitRev  (gitBranch, gitHash)
-import           Ether.Internal      (HasLens (..))
-import           Formatting          (build, sformat, shown, int, (%))
-import           Mockable            (fork)
-import           Serokell.Util.Text  (listJson)
-import           System.Exit         (ExitCode (..))
-import           System.Wlog         (WithLogger, getLoggerName, logError, logInfo,
-                                      logWarning)
+import           Control.Lens          (views)
+import           Development.GitRev    (gitBranch, gitHash)
+import           Ether.Internal        (HasLens (..))
+import           Formatting            (build, int, sformat, shown, (%))
+import           Mockable              (fork)
+import           Serokell.Util.Text    (listJson)
+import           System.Exit           (ExitCode (..))
+import           System.Wlog           (WithLogger, getLoggerName, logError, logInfo,
+                                        logWarning)
 
-import           Pos.Communication   (ActionSpec (..), OutSpecs, WorkerSpec,
-                                      wrapActionSpec)
-import qualified Pos.Constants       as Const
-import           Pos.DHT.Real        (kademliaJoinNetwork, KademliaDHTInstance (..))
-import           Pos.Context         (BlkSemaphore (..), HasNodeContext (..),
-                                      genesisStakeholdersM, getOurPubKeyAddress,
-                                      getOurPublicKey, NodeContext (..))
-import qualified Pos.GState          as GS
+import           Pos.Communication     (ActionSpec (..), OutSpecs, WorkerSpec,
+                                        wrapActionSpec)
+import qualified Pos.Constants         as Const
+import           Pos.Context           (BlkSemaphore (..), HasNodeContext (..),
+                                        NodeContext (..), genesisStakeholdersM,
+                                        getOurPubKeyAddress, getOurPublicKey)
+import           Pos.DHT.Real          (KademliaDHTInstance (..), kademliaJoinNetwork)
+import qualified Pos.GState            as GS
 import           Pos.Launcher.Resource (NodeResources (..))
-import           Pos.Lrc.DB          as LrcDB
-import           Pos.Network.Types   (NetworkConfig (..), topologyRunKademlia)
-import           Pos.Reporting       (reportMisbehaviour)
-import           Pos.Security        (SecurityWorkersClass)
-import           Pos.Shutdown        (waitForWorkers)
-import           Pos.Slotting        (waitSystemStart)
-import           Pos.Ssc.Class       (SscConstraint)
-import           Pos.Types           (addressHash)
-import           Pos.Util            (inAssertMode)
-import           Pos.Util.LogSafe    (logInfoS)
-import           Pos.Util.UserSecret (HasUserSecret (..))
-import           Pos.Worker          (allWorkers)
-import           Pos.WorkMode.Class  (WorkMode)
+import           Pos.Lrc.DB            as LrcDB
+import           Pos.Network.Types     (NetworkConfig (..), topologyRunKademlia)
+import           Pos.Reporting         (reportError)
+import           Pos.Security          (SecurityWorkersClass)
+import           Pos.Shutdown          (waitForWorkers)
+import           Pos.Slotting          (waitSystemStart)
+import           Pos.Ssc.Class         (SscConstraint)
+import           Pos.Types             (addressHash)
+import           Pos.Util              (inAssertMode)
+import           Pos.Util.LogSafe      (logInfoS)
+import           Pos.Util.UserSecret   (HasUserSecret (..))
+import           Pos.Worker            (allWorkers)
+import           Pos.WorkMode.Class    (WorkMode)
 
 -- | Entry point of full node.
 -- Initialization, running of workers, running of plugins.
@@ -75,7 +75,7 @@ runNode' NodeResources {..} workers' plugins' = ActionSpec $ \vI sendActions -> 
     -- If we can't join the network, an exception is raised and the program
     -- stops.
     case topologyRunKademlia (ncTopology (ncNetworkConfig nrContext)) of
-        Nothing -> return ()
+        Nothing    -> return ()
         Just kInst -> kademliaJoinNetwork kInst (kdiInitialPeers kInst)
 
     genesisStakeholders <- genesisStakeholdersM
@@ -103,10 +103,10 @@ runNode' NodeResources {..} workers' plugins' = ActionSpec $ \vI sendActions -> 
   where
     -- FIXME shouldn't this kill the whole program?
     -- FIXME: looks like something bad.
-    -- FIXME [CSL-1340]: it should be reported as 'RError'.
+    -- REPORT:ERROR Node's worker/plugin failed with exception (which wasn't caught)
     reportHandler (SomeException e) = do
         loggerName <- getLoggerName
-        reportMisbehaviour False $
+        reportError $
             sformat ("Worker/plugin with logger name "%shown%
                     " failed with exception: "%shown)
             loggerName e

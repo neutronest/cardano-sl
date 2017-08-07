@@ -37,7 +37,7 @@ import           Pos.Exception          (CardanoException)
 import           Pos.KnownPeers         (MonadFormatPeers)
 import           Pos.Recovery.Info      (MonadRecoveryInfo (recoveryInProgress))
 import           Pos.Reporting.MemState (HasReportingContext)
-import           Pos.Reporting.Methods  (reportMisbehaviour, reportingFatal)
+import           Pos.Reporting.Methods  (reportError, reportingFatal)
 import           Pos.Shutdown           (HasShutdownContext, runIfNotShutdown)
 import           Pos.Slotting.Class     (MonadSlots (..))
 import           Pos.Slotting.Error     (SlottingError (..))
@@ -139,9 +139,8 @@ onNewSlotImpl withLogging startImmediately action =
     workerHandler :: CardanoException -> m ()
     workerHandler e = do
         let msg = sformat ("Error occurred in 'onNewSlot' worker itself: " %build) e
-        logError $ msg
-        -- [CSL-1340] FIXME: it's not misbehavior, it should be reported as 'RError'.
-        reportMisbehaviour False msg
+        -- REPORT:ERROR on any CardanoException caught within onNewSlot action
+        reportError msg
         delay =<< getLastKnownSlotDuration
         onNewSlotImpl withLogging startImmediately action
 
