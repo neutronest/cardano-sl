@@ -23,8 +23,8 @@ import           System.Wlog                 (WithLogger, logError, runNamedPure
                                               usingLoggerName)
 
 import           Pos.Core                    (Address, Coin, EpochIndex, HeaderHash,
-                                              Timestamp, mkCoin, unsafeAddCoin,
-                                              unsafeSubCoin)
+                                              Timestamp, coinF, coinToInteger, mkCoin,
+                                              unsafeAddCoin, unsafeSubCoin)
 import           Pos.Crypto                  (WithHash (..), hash)
 import           Pos.Explorer.Core           (AddrHistory, TxExtra (..))
 import           Pos.Explorer.Txp.Toil.Class (MonadTxExtra (..), MonadTxExtraRead (..))
@@ -202,6 +202,9 @@ updateAddrBalances (combineBalanceUpdates -> updates) = mapM_ updater updates
     updater :: (MonadTxExtra m, WithLogger m) => (Address, (Sign, Coin)) -> m ()
     updater (addr, (Plus, coin)) = do
         currentBalance <- fromMaybe (mkCoin 0) <$> getAddrBalance addr
+        when (coinToInteger currentBalance + coinToInteger coin > coinToInteger maxBound) $ do
+            !() <- traceM $ sformat ("Overflow will happen soon, new balance for "%build%" is the sum of "%coinF%" and "%coinF) addr currentBalance coin
+            logError $ sformat ("Overflow will happen soon, new balance for "%build%" is the sum of "%coinF%" and "%coinF) addr currentBalance coin
         let newBalance = unsafeAddCoin currentBalance coin
         putAddrBalance addr newBalance
     updater (addr, (Minus, coin)) = do

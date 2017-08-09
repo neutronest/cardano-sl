@@ -95,6 +95,7 @@ eTxProcessTransaction
     => (TxId, TxAux) -> ExceptT ToilVerFailure m ()
 eTxProcessTransaction itw@(txId, TxAux {taTx = UnsafeTx {..}}) = do
     tipBefore <- GS.getTip
+    putText $ sformat ("TX: " %build) (UnsafeTx {..})
     localUM <- lift getUtxoModifier
     epoch <- siEpoch <$> (note ToilSlotUnknown =<< getCurrentSlot)
     genStks <- view (lensOf @GenesisWStakeholders)
