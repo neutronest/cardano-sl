@@ -24,6 +24,8 @@ module Pos.Client.Txp.Util
 
        -- * Additional datatypes
        , TxError (..)
+       , TxOutputs
+       , TxWithSpendings
        ) where
 
 import           Universum
@@ -37,7 +39,7 @@ import qualified Data.List.NonEmpty       as NE
 import qualified Data.Map                 as M
 import qualified Data.Text.Buildable
 import qualified Data.Vector              as V
-import           Formatting               (bprint, build, sformat, stext, (%))
+import           Formatting               (bprint, build, sformat, shown, stext, (%))
 
 import           Pos.Binary               (biSize)
 import           Pos.Client.Txp.Addresses (MonadAddresses (..))
@@ -63,6 +65,10 @@ type TxInputs = NonEmpty TxIn
 type TxOwnedInputs owner = NonEmpty (owner, TxIn)
 type TxOutputs = NonEmpty TxOutAux
 type TxWithSpendings = (TxAux, NonEmpty TxOut)
+
+instance Buildable TxWithSpendings where
+    build (txAux, neTxOut) =
+        bprint ("("%shown%", "%shown%")") txAux neTxOut
 
 -- This datatype corresponds to raw transaction.
 data TxRaw = TxRaw
