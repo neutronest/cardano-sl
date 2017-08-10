@@ -66,8 +66,6 @@ import           Formatting                (bprint, sformat, (%))
 import qualified Formatting                as F
 import qualified Prelude
 import qualified Serokell.Util.Base16      as Base16
-import           Servant.Multipart         (FileData, FromMultipart (..), lookupFile,
-                                            lookupInput)
 
 import           Pos.Aeson.Types           ()
 import           Pos.Binary.Class          (decodeFull, serialize')
