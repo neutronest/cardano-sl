@@ -18,9 +18,12 @@ import qualified Data.HashMap.Strict         as HM
 import qualified Data.HashSet                as HS
 import           Data.List                   (delete)
 import qualified Data.List.NonEmpty          as NE
-import           Formatting                  (build, sformat, (%))
-import           System.Wlog                 (WithLogger, logError, runNamedPureLog,
-                                              usingLoggerName)
+import           Data.Text.Buildable         (Buildable)
+import qualified Data.Text.Buildable         as Buildable
+import           Formatting                  (bprint, build, int, sformat, (%))
+import           Serokell.Util               (mapJson)
+import           System.Wlog                 (LogEvent, WithLogger, logError,
+                                              runNamedPureLog, usingLoggerName)
 
 import           Pos.Core                    (Address, Coin, EpochIndex, HeaderHash,
                                               Timestamp, coinF, coinToInteger, mkCoin,
@@ -99,12 +102,31 @@ eProcessTx
     :: (ELocalToilMode ctx m, MonadError ToilVerFailure m)
     => EpochIndex -> (TxId, TxAux) -> TxExtra -> m ()
 eProcessTx curEpoch tx@(id, aux) extra = do
+    fullUtxo <- Txp.getFullUtxo
+    fullBalances <- getFullBalances
+    let fullBalancesFromUtxo = HM.fromListWith unsafeAddCoin $ map ((txOutAddress &&& txOutValue) . toaOut . snd) $ HM.toList $ fullUtxo
+    traceM $ sformat ("[eProcessTx, before] Full utxo: "%mapJson) fullBalancesFromUtxo
+    traceM $ sformat ("[eProcessTx, before] Full balances: "%mapJson) fullBalances
+
+    -- unless (fullBalances == fullBalancesFromUtxo) $ do
+    --     throwError $ ToilInvalidOutputs "Maps are not equal"
+
     undo <- Txp.processTx curEpoch tx
     putTxExtraWithHistory id extra $ getTxRelatedAddrs aux undo
     let balanceUpdate = getBalanceUpdate aux undo
     -- TODO: [CSM-245] do not discard logged errors
-    fmap fst $ usingLoggerName "eProcessTx" $ runNamedPureLog $
+    ((), pureLog) <- usingLoggerName "eProcessTx" $ runNamedPureLog $
         updateAddrBalances balanceUpdate
+    traceM $ sformat ("Log events ("%int%"): "%build) (length pureLog) pureLog
+
+    fullUtxo <- Txp.getFullUtxo
+    fullBalances <- getFullBalances
+    let fullBalancesFromUtxo = HM.fromListWith unsafeAddCoin $ map ((txOutAddress &&& txOutValue) . toaOut . snd) $ HM.toList $ fullUtxo
+    traceM $ sformat ("[eProcessTx, after] Full utxo: "%mapJson) fullBalancesFromUtxo
+    traceM $ sformat ("[eProcessTx, after] Full balances: "%mapJson) fullBalances
+
+    -- unless (fullBalances == fullBalancesFromUtxo) $ do
+    --     throwError $ ToilInvalidOutputs "Maps are not equal"
 
 -- | Get rid of invalid transactions.
 -- All valid transactions will be added to mem pool and applied to utxo.
@@ -168,13 +190,28 @@ getTxRelatedAddrs TxAux {taTx = UnsafeTx {..}} undo =
     -- Safe here, because union of non-empty sets can't be empty.
     unionNE lhs rhs = NE.fromList $ toList $ HS.union (toSet lhs) (toSet rhs)
 
+instance Buildable (Maybe Coin, Maybe Coin) where
+    build (a, b) = bprint ("("%build%", "%build%")") a b
+
+instance Buildable (Sign, Coin) where
+    build (Plus, c)  = bprint ("+"%build) c
+    build (Minus, c) = bprint ("-"%build) c
+
+instance Buildable [LogEvent] where
+    build = show
+
 combineBalanceUpdates :: BalanceUpdate -> [(Address, (Sign, Coin))]
 combineBalanceUpdates BalanceUpdate {..} =
     let plusCombined  = HM.fromListWith unsafeAddCoin plusBalance
         minusCombined = HM.fromListWith unsafeAddCoin minusBalance
         bothCombined = outerJoin plusCombined minusCombined
         result = HM.mapMaybe reducer bothCombined
-    in HM.toList result
+    in
+    trace (sformat ("plusCombined == "%mapJson) plusCombined) $
+    trace (sformat ("minusCombined == "%mapJson) minusCombined) $
+    trace (sformat ("bothCombined == "%mapJson) bothCombined) $
+    trace (sformat ("result == "%mapJson) result) $
+    HM.toList result
   where
     outerJoin
         :: (Eq k, Hashable k)
@@ -206,6 +243,7 @@ updateAddrBalances (combineBalanceUpdates -> updates) = mapM_ updater updates
             !() <- traceM $ sformat ("Overflow will happen soon, new balance for "%build%" is the sum of "%coinF%" and "%coinF) addr currentBalance coin
             logError $ sformat ("Overflow will happen soon, new balance for "%build%" is the sum of "%coinF%" and "%coinF) addr currentBalance coin
         let newBalance = unsafeAddCoin currentBalance coin
+        traceM $ sformat ("Updating balance of "%build%" from "%build%" to "%build) addr currentBalance newBalance
         putAddrBalance addr newBalance
     updater (addr, (Minus, coin)) = do
         maybeBalance <- getAddrBalance addr
@@ -221,6 +259,7 @@ updateAddrBalances (combineBalanceUpdates -> updates) = mapM_ updater updates
                         coin addr currentBalance
                 | otherwise -> do
                     let newBalance = unsafeSubCoin currentBalance coin
+                    traceM $ sformat ("Updating balance of "%build%" from "%build%" to "%build) addr currentBalance newBalance
                     if newBalance == mkCoin 0 then
                         delAddrBalance addr
                     else

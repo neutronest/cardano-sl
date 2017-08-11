@@ -27,6 +27,7 @@ class Monad m => MonadTxExtraRead m where
     getTxExtra :: TxId -> m (Maybe TxExtra)
     getAddrHistory :: Address -> m AddrHistory
     getAddrBalance :: Address -> m (Maybe Coin)
+    getFullBalances :: m (HashMap Address Coin)
 
 instance {-# OVERLAPPABLE #-}
     (MonadTxExtraRead m, MonadTrans t, Monad (t m)) =>
@@ -35,6 +36,7 @@ instance {-# OVERLAPPABLE #-}
     getTxExtra = lift . getTxExtra
     getAddrHistory = lift . getAddrHistory
     getAddrBalance = lift . getAddrBalance
+    getFullBalances = lift getFullBalances
 
 
 class MonadTxExtraRead m => MonadTxExtra m where
@@ -65,6 +67,8 @@ instance MonadTxExtraRead m => MonadTxExtraRead (ToilT ExplorerExtra m) where
         maybe (getAddrHistory addr) pure =<< use (tmExtra . eeAddrHistories . at addr)
     getAddrBalance addr = ether $
         MM.lookupM getAddrBalance addr =<< use (tmExtra . eeAddrBalances)
+    getFullBalances = ether $
+        MM.insertionsMap <$> use (tmExtra . eeAddrBalances)
 
 instance MonadTxExtraRead m => MonadTxExtra (ToilT ExplorerExtra m) where
     putTxExtra id extra = ether $

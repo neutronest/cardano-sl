@@ -34,10 +34,13 @@ class Monad m => MonadUtxoRead m where
     utxoGet :: TxIn -> m (Maybe TxOutAux)
     default utxoGet :: (MonadTrans t, MonadUtxoRead m', t m' ~ m) => TxIn -> m (Maybe TxOutAux)
     utxoGet = lift . utxoGet
+    getFullUtxo :: m (HashMap TxIn TxOutAux)
 
 instance {-# OVERLAPPABLE #-}
     (MonadUtxoRead m, MonadTrans t, Monad (t m)) =>
         MonadUtxoRead (t m)
+  where
+    getFullUtxo = lift getFullUtxo
 
 -- | Implementation of 'utxoGet' which takes data from 'MonadReader' context.
 utxoGetReader :: (HasLens' ctx Utxo, MonadReader ctx m) => TxIn -> m (Maybe TxOutAux)
