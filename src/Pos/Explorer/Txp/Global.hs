@@ -12,6 +12,7 @@ import qualified Data.HashMap.Strict   as HM
 
 import           Pos.Core              (HeaderHash, headerHash)
 import           Pos.DB                (SomeBatchOp (..))
+import           Pos.DB.Class          (MonadDBRead)
 import           Pos.Slotting          (MonadSlots, currentTimeSlotting)
 import           Pos.Txp               (ApplyBlocksSettings (..), TxpBlund,
                                         TxpGlobalRollbackMode, TxpGlobalSettings (..),
@@ -36,7 +37,7 @@ explorerTxpGlobalSettings =
     }
 
 eApplyBlocksSettings
-    :: (EGlobalApplyToilMode m, MonadSlots m)
+    :: (EGlobalApplyToilMode m, MonadSlots m, MonadDBRead m)
     => ApplyBlocksSettings ExplorerExtra m
 eApplyBlocksSettings =
     ApplyBlocksSettings
@@ -53,7 +54,7 @@ extraOps (ExplorerExtra em (HM.toList -> histories) balances) =
     map (uncurry GS.PutAddrBalance) (MM.insertions balances) ++
     map GS.DelAddrBalance (MM.deletions balances)
 
-applyBlund :: (MonadSlots m, EGlobalApplyToilMode m) => TxpBlund -> m ()
+applyBlund :: (MonadSlots m, EGlobalApplyToilMode m, MonadDBRead m) => TxpBlund -> m ()
 applyBlund blund = do
     curTime <- currentTimeSlotting
     uncurry (eApplyToil curTime) $ blundToAuxNUndoWHash blund

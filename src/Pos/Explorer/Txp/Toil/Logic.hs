@@ -29,6 +29,7 @@ import           Pos.Core                    (Address, Coin, EpochIndex, HeaderH
                                               Timestamp, coinF, coinToInteger, mkCoin,
                                               unsafeAddCoin, unsafeSubCoin)
 import           Pos.Crypto                  (WithHash (..), hash)
+import           Pos.DB.Class                (MonadDBRead)
 import           Pos.Explorer.Core           (AddrHistory, TxExtra (..))
 import qualified Pos.Explorer.DB             as ExDB
 import           Pos.Explorer.Txp.Toil.Class (MonadTxExtra (..), MonadTxExtraRead (..))
@@ -55,14 +56,16 @@ type EGlobalVerifyToilMode ctx m =
 -- | Apply transactions from one block. They must be valid (for
 -- example, it implies topological sort).
 eApplyToil
-    :: EGlobalApplyToilMode m
+    :: (EGlobalApplyToilMode m, MonadDBRead m)
     => Timestamp
     -> [(TxAux, TxUndo)]
     -> HeaderHash
     -> m ()
 eApplyToil curTime txun hh = do
+    ExDB.sanityCheckBalances "eApplyToil, before"
     Txp.applyToil txun
     mapM_ applier $ zip [0..] txun
+    ExDB.sanityCheckBalances "eApplyToil, after"
   where
     applier (i, (txAux, txUndo)) = do
         let tx = taTx txAux
@@ -74,10 +77,12 @@ eApplyToil curTime txun hh = do
         updateAddrBalances balanceUpdate
 
 -- | Rollback transactions from one block.
-eRollbackToil :: EGlobalApplyToilMode m => [(TxAux, TxUndo)] -> m ()
+eRollbackToil :: (EGlobalApplyToilMode m, MonadDBRead m) => [(TxAux, TxUndo)] -> m ()
 eRollbackToil txun = do
+    ExDB.sanityCheckBalances "eRollbackToil, before"
     Txp.rollbackToil txun
     mapM_ extraRollback $ reverse txun
+    ExDB.sanityCheckBalances "eRollbackToil, after"
   where
     extraRollback (txAux, txUndo) = do
         delTxExtraWithHistory (hash (taTx txAux)) $
