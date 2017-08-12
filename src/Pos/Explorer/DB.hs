@@ -15,6 +15,7 @@ module Pos.Explorer.DB
        , getLastTransactions
        , prepareExplorerDB
        , sanityCheckBalances
+       , getAllPotentiallyHugeBalancesMap
        ) where
 
 import           Universum
@@ -181,6 +182,12 @@ balancesSink =
     CL.fold
         (\res (addr, coin) -> res & at addr . non minBound %~ unsafeAddCoin coin)
         mempty
+
+getAllPotentiallyHugeBalancesMap :: MonadDBRead m => m (HashMap Address Coin)
+getAllPotentiallyHugeBalancesMap = do
+  let utxoBalancesSource =
+        mapOutput ((txOutAddress &&& txOutValue) . toaOut . snd) utxoSource
+  runConduitRes $ utxoBalancesSource .| balancesSink
 
 ----------------------------------------------------------------------------
 -- Sanity check

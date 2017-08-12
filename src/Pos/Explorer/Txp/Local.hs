@@ -13,7 +13,7 @@ import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Data.Default                (def)
 import qualified Data.HashMap.Strict         as HM
 import qualified Data.List.NonEmpty          as NE
-import qualified Data.Map                    as M (fromList)
+import qualified Data.Map                    as M (fromList, toList)
 import           Ether.Internal              (HasLens (..))
 import           Formatting                  (build, sformat, (%))
 import           System.Wlog                 (WithLogger, logDebug)
@@ -78,6 +78,7 @@ type EProcessTxMode = Reader EProcessTxContext
 
 instance MonadUtxoRead EProcessTxMode where
     utxoGet = utxoGetReader
+    getFullUtxo = (HM.fromList . M.toList) <$> view eptcUtxoBase
 
 instance MonadGState EProcessTxMode where
     gsAdoptedBVData = view eptcAdoptedBVData
@@ -89,6 +90,7 @@ instance MonadTxExtraRead EProcessTxMode where
         view eptcExtraBase
     getAddrBalance addr =
         HM.lookup addr . eetAddrBalances <$> view eptcExtraBase
+    getFullBalances = eetAddrBalances <$> view eptcExtraBase
 
 eTxProcessTransaction
     :: ETxpLocalWorkMode ctx m

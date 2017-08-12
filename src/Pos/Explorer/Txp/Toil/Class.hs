@@ -67,8 +67,9 @@ instance MonadTxExtraRead m => MonadTxExtraRead (ToilT ExplorerExtra m) where
         maybe (getAddrHistory addr) pure =<< use (tmExtra . eeAddrHistories . at addr)
     getAddrBalance addr = ether $
         MM.lookupM getAddrBalance addr =<< use (tmExtra . eeAddrBalances)
-    getFullBalances = ether $
-        MM.insertionsMap <$> use (tmExtra . eeAddrBalances)
+    getFullBalances = ether $ do
+        balancesModifier <- use (tmExtra . eeAddrBalances)
+        MM.modifyHashMap balancesModifier <$> getFullBalances
 
 instance MonadTxExtraRead m => MonadTxExtra (ToilT ExplorerExtra m) where
     putTxExtra id extra = ether $
@@ -90,3 +91,4 @@ instance (MonadDBRead m) => MonadTxExtraRead (DBToil m) where
     getTxExtra = DB.getTxExtra
     getAddrHistory = DB.getAddrHistory
     getAddrBalance = DB.getAddrBalance
+    getFullBalances = DB.getAllPotentiallyHugeBalancesMap

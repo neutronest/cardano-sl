@@ -40,7 +40,9 @@ type ToilT ext m = Ether.StateT' (GenericToilModifier ext) m
 
 instance MonadUtxoRead m => MonadUtxoRead (ToilT __ m) where
     utxoGet id = ether $ MM.lookupM utxoGet id =<< use tmUtxo
-    getFullUtxo = ether $ MM.insertionsMap <$> use tmUtxo
+    getFullUtxo = ether $ do
+        utxoModifier <- use tmUtxo
+        MM.modifyHashMap utxoModifier <$> getFullUtxo
 
 instance MonadUtxoRead m => MonadUtxo (ToilT __ m) where
     utxoPut id aux = ether $ tmUtxo %= MM.insert id aux
