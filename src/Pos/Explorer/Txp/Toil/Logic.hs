@@ -30,6 +30,7 @@ import           Pos.Core                    (Address, Coin, EpochIndex, HeaderH
                                               unsafeAddCoin, unsafeSubCoin)
 import           Pos.Crypto                  (WithHash (..), hash)
 import           Pos.Explorer.Core           (AddrHistory, TxExtra (..))
+import qualified Pos.Explorer.DB             as ExDB
 import           Pos.Explorer.Txp.Toil.Class (MonadTxExtra (..), MonadTxExtraRead (..))
 import           Pos.Txp.Core                (Tx (..), TxAux (..), TxId, TxOut (..),
                                               TxOutAux (..), TxUndo, topsortTxs, _TxOut)
@@ -109,8 +110,8 @@ eProcessTx curEpoch tx@(id, aux) extra = do
     traceM $ sformat ("[eProcessTx, before] Full balances: "%mapJson) fullBalances
 
     unless (fullBalances == fullBalancesFromUtxo) $ do
-        -- throwError $ ToilInvalidOutputs "[eProcessTx, before] Maps are not equal"
-        traceM "[eProcessTx, before] Maps are not equal"
+        throwError $ ToilInvalidOutputs "[eProcessTx, before] Maps are not equal"
+        -- traceM "[eProcessTx, before] Maps are not equal"
 
     undo <- Txp.processTx curEpoch tx
     putTxExtraWithHistory id extra $ getTxRelatedAddrs aux undo
@@ -127,8 +128,8 @@ eProcessTx curEpoch tx@(id, aux) extra = do
     traceM $ sformat ("[eProcessTx, after] Full balances: "%mapJson) fullBalances
 
     unless (fullBalances == fullBalancesFromUtxo) $ do
-        -- throwError $ ToilInvalidOutputs "[eProcessTx, after] Maps are not equal"
-        traceM "[eProcessTx, after] Maps are not equal"
+        throwError $ ToilInvalidOutputs "[eProcessTx, after] Maps are not equal"
+        -- traceM "[eProcessTx, after] Maps are not equal"
 
 -- | Get rid of invalid transactions.
 -- All valid transactions will be added to mem pool and applied to utxo.

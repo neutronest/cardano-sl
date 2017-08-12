@@ -27,6 +27,7 @@ import qualified Pos.GState                  as GS
 import           Pos.Slotting                (MonadSlots (currentTimeSlotting, getCurrentSlot))
 import           Pos.Txp.Core                (Tx (..), TxAux (..), TxId, toaOut,
                                               txOutAddress)
+import           Pos.Txp.DB                  (getAllPotentiallyHugeUtxo)
 import           Pos.Txp.MemState            (GenericTxpLocalDataPure, MonadTxpMem,
                                               getLocalTxsMap, getTxpExtra,
                                               getUtxoModifier, modifyTxpLocalData,
@@ -110,10 +111,11 @@ eTxProcessTransaction itw@(txId, TxAux {taTx = UnsafeTx {..}}) = do
     (resolvedOuts, _) <- runDBToil $ runUM localUM $ mapM utxoGet _txInputs
     -- Resolved are unspent transaction outputs corresponding to input
     -- of given transaction.
-    let resolved =
-            M.fromList $
-            catMaybes $
-            toList $ NE.zipWith (liftM2 (,) . Just) _txInputs resolvedOuts
+    resolved <- getAllPotentiallyHugeUtxo
+    -- let resolved =
+    --         M.fromList $
+    --         catMaybes $
+    --         toList $ NE.zipWith (liftM2 (,) . Just) _txInputs resolvedOuts
     curTime <- currentTimeSlotting
     let txInAddrs =
             map (txOutAddress . toaOut) $ catMaybes $ toList resolvedOuts
@@ -121,7 +123,8 @@ eTxProcessTransaction itw@(txId, TxAux {taTx = UnsafeTx {..}}) = do
         allAddrs = ordNub $ txInAddrs <> txOutAddrs
     hmHistories <-
         buildMap allAddrs <$> mapM (fmap Just . ExDB.getAddrHistory) allAddrs
-    hmBalances <- buildMap allAddrs <$> mapM ExDB.getAddrBalance allAddrs
+    -- hmBalances <- buildMap allAddrs <$> mapM ExDB.getAddrBalance allAddrs
+    hmBalances <- ExDB.getAllPotentiallyHugeBalancesMap
     -- `eet` is passed to `processTxDo` where it is used in a ReaderT environment
     -- to provide underlying functions (`modifyAddrHistory` and `modifyAddrBalance`)
     -- with data to update. In case of `TxExtra` data is only added, but never updated,
@@ -134,10 +137,16 @@ eTxProcessTransaction itw@(txId, TxAux {taTx = UnsafeTx {..}}) = do
             , _eptcUtxoBase = resolved
             , _eptcGenStakeholders = genStks
             }
+
+    ExDB.sanityCheckBalances "eTxProcessTransaction, before"
+
     pRes <-
         lift $
         modifyTxpLocalData "eTxProcessTransaction" $
         processTxDo epoch ctx tipBefore itw curTime
+
+    ExDB.sanityCheckBalances "eTxProcessTransaction, after"
+
     case pRes of
         Left er -> do
             logDebug $ sformat ("Transaction processing failed: " %build) txId

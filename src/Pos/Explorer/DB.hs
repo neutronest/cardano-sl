@@ -27,7 +27,7 @@ import           Data.Conduit                 (Sink, Source, mapOutput, runCondu
 import qualified Data.Conduit.List            as CL
 import qualified Database.RocksDB             as Rocks
 import           Ether.Internal               (HasLens (..))
-import           Formatting                   (sformat, (%))
+import           Formatting                   (build, sformat, (%))
 import           Serokell.Util                (Color (Red), colorize, mapJson)
 import           System.Wlog                  (WithLogger, logError)
 
@@ -184,10 +184,8 @@ balancesSink =
         mempty
 
 getAllPotentiallyHugeBalancesMap :: MonadDBRead m => m (HashMap Address Coin)
-getAllPotentiallyHugeBalancesMap = do
-  let utxoBalancesSource =
-        mapOutput ((txOutAddress &&& txOutValue) . toaOut . snd) utxoSource
-  runConduitRes $ utxoBalancesSource .| balancesSink
+getAllPotentiallyHugeBalancesMap =
+    runConduitRes $ balancesSource .| balancesSink
 
 ----------------------------------------------------------------------------
 -- Sanity check
@@ -200,16 +198,17 @@ getAllPotentiallyHugeBalancesMap = do
 -- used in production.
 sanityCheckBalances
     :: (MonadDBRead m, WithLogger m)
-    => m ()
-sanityCheckBalances = do
+    => Text
+    -> m ()
+sanityCheckBalances tag = do
+    storedMap <- getAllPotentiallyHugeBalancesMap
     let utxoBalancesSource =
             mapOutput ((txOutAddress &&& txOutValue) . toaOut . snd) utxoSource
-    storedMap <- runConduitRes $ balancesSource .| balancesSink
     computedFromUtxoMap <- runConduitRes $ utxoBalancesSource .| balancesSink
     let fmt =
-            ("Explorer's balances are inconsistent with UTXO.\nExplorer stores: "
+            ("["%build%"] Explorer's balances are inconsistent with UTXO.\nExplorer stores: "
              %mapJson%".\nUtxo version is: "%mapJson%"\n")
-    let msg = sformat fmt storedMap computedFromUtxoMap
+    let msg = sformat fmt tag storedMap computedFromUtxoMap
     unless (storedMap == computedFromUtxoMap) $ do
         logError $ colorize Red msg
         logError . colorize Red . sformat ("Actual utxo is: " %utxoF) =<<
