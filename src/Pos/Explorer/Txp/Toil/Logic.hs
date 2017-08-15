@@ -53,6 +53,21 @@ type EGlobalVerifyToilMode ctx m =
     , MonadTxExtra m
     )
 
+validateBalances :: (MonadTxExtraRead m, Txp.MonadUtxo m) => Text -> m ()
+validateBalances tag = do
+    traceM $ sformat ("["%build%"]") tag
+
+    fullUtxo <- Txp.getFullUtxo
+    fullBalances <- getFullBalances
+    let fullBalancesFromUtxo = HM.fromListWith unsafeAddCoin $ map ((txOutAddress &&& txOutValue) . toaOut . snd) $ HM.toList $ fullUtxo
+
+    unless (fullBalances == fullBalancesFromUtxo) $ do
+        traceM $ sformat ("["%build%"] Full utxo: "%mapJson) tag fullBalancesFromUtxo
+        traceM $ sformat ("["%build%"] Full balances: "%mapJson) tag fullBalances
+        error $ sformat ("["%build%"] Maps are not equal") tag
+        -- traceM "[eProcessTx, before] Maps are not equal"
+
+
 -- | Apply transactions from one block. They must be valid (for
 -- example, it implies topological sort).
 eApplyToil
@@ -62,10 +77,10 @@ eApplyToil
     -> HeaderHash
     -> m ()
 eApplyToil curTime txun hh = do
-    ExDB.sanityCheckBalances "eApplyToil, before"
+    validateBalances "eApplyToil, before"
     Txp.applyToil txun
     mapM_ applier $ zip [0..] txun
-    ExDB.sanityCheckBalances "eApplyToil, after"
+    validateBalances "eApplyToil, after"
   where
     applier (i, (txAux, txUndo)) = do
         let tx = taTx txAux
@@ -79,10 +94,10 @@ eApplyToil curTime txun hh = do
 -- | Rollback transactions from one block.
 eRollbackToil :: (EGlobalApplyToilMode m, MonadDBRead m) => [(TxAux, TxUndo)] -> m ()
 eRollbackToil txun = do
-    ExDB.sanityCheckBalances "eRollbackToil, before"
+    validateBalances "eRollbackToil, before"
     Txp.rollbackToil txun
     mapM_ extraRollback $ reverse txun
-    ExDB.sanityCheckBalances "eRollbackToil, after"
+    validateBalances "eRollbackToil, after"
   where
     extraRollback (txAux, txUndo) = do
         delTxExtraWithHistory (hash (taTx txAux)) $
@@ -108,15 +123,7 @@ eProcessTx
     :: (ELocalToilMode ctx m, MonadError ToilVerFailure m)
     => EpochIndex -> (TxId, TxAux) -> TxExtra -> m ()
 eProcessTx curEpoch tx@(id, aux) extra = do
-    fullUtxo <- Txp.getFullUtxo
-    fullBalances <- getFullBalances
-    let fullBalancesFromUtxo = HM.fromListWith unsafeAddCoin $ map ((txOutAddress &&& txOutValue) . toaOut . snd) $ HM.toList $ fullUtxo
-    traceM $ sformat ("[eProcessTx, before] Full utxo: "%mapJson) fullBalancesFromUtxo
-    traceM $ sformat ("[eProcessTx, before] Full balances: "%mapJson) fullBalances
-
-    unless (fullBalances == fullBalancesFromUtxo) $ do
-        throwError $ ToilInvalidOutputs "[eProcessTx, before] Maps are not equal"
-        -- traceM "[eProcessTx, before] Maps are not equal"
+    validateBalances "eProcessTx, before"
 
     undo <- Txp.processTx curEpoch tx
     putTxExtraWithHistory id extra $ getTxRelatedAddrs aux undo
@@ -126,15 +133,7 @@ eProcessTx curEpoch tx@(id, aux) extra = do
         updateAddrBalances balanceUpdate
     traceM $ sformat ("Log events ("%int%"): "%build) (length pureLog) pureLog
 
-    fullUtxo <- Txp.getFullUtxo
-    fullBalances <- getFullBalances
-    let fullBalancesFromUtxo = HM.fromListWith unsafeAddCoin $ map ((txOutAddress &&& txOutValue) . toaOut . snd) $ HM.toList $ fullUtxo
-    traceM $ sformat ("[eProcessTx, after] Full utxo: "%mapJson) fullBalancesFromUtxo
-    traceM $ sformat ("[eProcessTx, after] Full balances: "%mapJson) fullBalances
-
-    unless (fullBalances == fullBalancesFromUtxo) $ do
-        throwError $ ToilInvalidOutputs "[eProcessTx, after] Maps are not equal"
-        -- traceM "[eProcessTx, after] Maps are not equal"
+    validateBalances "eProcessTx, after"
 
 -- | Get rid of invalid transactions.
 -- All valid transactions will be added to mem pool and applied to utxo.
@@ -215,10 +214,10 @@ combineBalanceUpdates BalanceUpdate {..} =
         bothCombined = outerJoin plusCombined minusCombined
         result = HM.mapMaybe reducer bothCombined
     in
-    trace (sformat ("plusCombined == "%mapJson) plusCombined) $
-    trace (sformat ("minusCombined == "%mapJson) minusCombined) $
-    trace (sformat ("bothCombined == "%mapJson) bothCombined) $
-    trace (sformat ("result == "%mapJson) result) $
+    -- trace (sformat ("plusCombined == "%mapJson) plusCombined) $
+    -- trace (sformat ("minusCombined == "%mapJson) minusCombined) $
+    -- trace (sformat ("bothCombined == "%mapJson) bothCombined) $
+    -- trace (sformat ("result == "%mapJson) result) $
     HM.toList result
   where
     outerJoin

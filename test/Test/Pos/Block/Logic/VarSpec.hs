@@ -17,10 +17,11 @@ import qualified Data.List.NonEmpty           as NE
 import qualified Data.Ratio                   as Ratio
 import           Data.Semigroup               ((<>))
 import           Ether.Internal               (HasLens (..))
+import           Formatting                   (build, sformat, (%))
 import           Test.Hspec                   (Spec, describe)
 import           Test.Hspec.QuickCheck        (modifyMaxSuccess, prop)
 import           Test.QuickCheck.Gen          (Gen (MkGen))
-import           Test.QuickCheck.Monadic      (assert, pick, pre)
+import           Test.QuickCheck.Monadic      (pick, pre)
 import           Test.QuickCheck.Random       (QCGen)
 
 import           Pos.Block.Logic              (verifyAndApplyBlocks, verifyBlocksPrefix)
@@ -149,6 +150,7 @@ applyByOneOrAllAtOnce ::
        (OldestFirst NE (Blund SscGodTossing) -> BlockTestMode ())
     -> BlockProperty ()
 applyByOneOrAllAtOnce applier = do
+    putText "\n\n\n\n\n\n\n\n\n\nNEW TEST"
     bpGoToArbitraryState
     blunds <-
         getOldestFirst <$>
@@ -170,9 +172,20 @@ applyByOneOrAllAtOnce applier = do
         lift $ do
             applier blundsNE
             dbPureDump
-    assert
-        (stateAfter1by1 == stateAfterInChunks &&
-         stateAfterInChunks == stateAfterAllAtOnce)
+
+    unless (stateAfter1by1 == stateAfterInChunks) $ stopProperty $
+        sformat (
+            "stateAfter1by1 ≠ stateAfterInChunks\n" %
+            "stateAfter1by1 == "%build%"\n" %
+            "stateAfterInChunks == "%build
+            ) stateAfter1by1 stateAfterInChunks
+
+    unless (stateAfterInChunks == stateAfterAllAtOnce) $ stopProperty $
+        sformat (
+            "stateAfterInChunks ≠ stateAfterAllAtOnce\n" %
+            "stateAfterInChunks == "%build%"\n" %
+            "stateAfterAllAtOnce == "%build
+            ) stateAfterInChunks stateAfterAllAtOnce
 
 ----------------------------------------------------------------------------
 -- Block events

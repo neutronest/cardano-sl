@@ -47,8 +47,11 @@ import qualified Data.Conduit.List            as CL
 import           Data.Default                 (Default (..))
 import qualified Data.Map                     as M
 import qualified Data.Set                     as S
+import qualified Data.Text.Buildable          as Buildable
 import qualified Database.RocksDB             as Rocks
 import           Ether.Internal               (HasLens (..))
+import           Formatting                   (bprint, (%))
+import           Serokell.Util                (mapJson)
 
 import           Pos.Binary.Class             (Bi)
 import           Pos.Core                     (HeaderHash)
@@ -74,6 +77,18 @@ makeLenses ''DBPure
 
 instance Default DBPure where
     def = DBPure mempty mempty mempty mempty mempty
+
+instance Buildable DBPure where
+    build DBPure {..} =
+        bprint (
+            "{\n" %
+            "    pureBlockIndexDB = "%mapJson%",\n" %
+            "    pureGStateDB = "%mapJson%",\n" %
+            "    pureLrcDB = "%mapJson%",\n" %
+            "    pureMiscDB = "%mapJson%",\n" %
+            "    pureBlocksStorage = "%mapJson%",\n" %
+            "}"
+            ) _pureBlockIndexDB _pureGStateDB _pureLrcDB _pureMiscDB _pureBlocksStorage
 
 type DBPureVar = IORef DBPure
 

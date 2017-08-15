@@ -196,6 +196,9 @@ instance NFData Millisecond where
 instance NFData Microsecond where
     rnf ms = rnf (toInteger ms)
 
+instance Buildable ByteString where
+    build = build @String . show
+
 ----------------------------------------------------------------------------
 -- Orphan Buildable instances for time-units
 ----------------------------------------------------------------------------
