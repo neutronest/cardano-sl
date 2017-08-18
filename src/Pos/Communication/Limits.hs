@@ -1,9 +1,8 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE Rank2Types    #-}
+{-# LANGUAGE TypeFamilies  #-}
 
 module Pos.Communication.Limits
        (
@@ -25,15 +24,18 @@ import           Pos.Binary.Class                   (AsBinary (..))
 import           Pos.Block.Core                     (Block, BlockHeader)
 import           Pos.Block.Network.Types            (MsgBlock (..), MsgGetBlocks (..),
                                                      MsgGetHeaders (..), MsgHeaders (..))
+import           Pos.Communication.Types.Protocol   (MsgSubscribe (..))
 import           Pos.Communication.Types.Relay      (DataMsg (..))
 import qualified Pos.Constants                      as Const
 import           Pos.Core                           (BlockVersionData (..),
                                                      coinPortionToDouble)
-import           Pos.Crypto                         (AbstractHash, EncShare, Secret,
+import           Pos.Core.Context                   (HasCoreConstants, blkSecurityParam)
+import           Pos.Crypto                         (AbstractHash, EncShare,
                                                      ProxyCert (..), ProxySecretKey (..),
                                                      ProxySignature (..), PublicKey,
-                                                     SecretProof, SecretSharingExtra (..),
-                                                     Share, Signature (..), VssPublicKey)
+                                                     Secret, SecretProof,
+                                                     SecretSharingExtra (..), Share,
+                                                     Signature (..), VssPublicKey)
 import qualified Pos.DB.Class                       as DB
 import           Pos.Delegation.Types               (ProxySKLightConfirmation)
 import           Pos.Ssc.GodTossing.Core.Types      (Commitment (..), InnerSharesMap,
@@ -269,19 +271,25 @@ instance MessageLimited (MsgBlock ssc) where
         blkLimit <- getMsgLenLimit (Proxy @(Block ssc))
         return $ MsgBlock <$> blkLimit
 
-instance MessageLimitedPure MsgGetHeaders where
+instance HasCoreConstants => MessageLimitedPure MsgGetHeaders where
     msgLenLimit = MsgGetHeaders <$> vector maxGetHeadersNum <+> msgLenLimit
       where
         maxGetHeadersNum = ceiling $
-            log (fromIntegral Const.blkSecurityParam) + (5 :: Double)
+            log (fromIntegral blkSecurityParam) + (5 :: Double)
 
-instance MessageLimited MsgGetHeaders
+instance HasCoreConstants => MessageLimited MsgGetHeaders
 
 instance MessageLimited (MsgHeaders ssc) where
     getMsgLenLimit _ = do
         headerLimit <- getMsgLenLimit (Proxy @(BlockHeader ssc))
         return $
             MsgHeaders <$> vectorOf Const.recoveryHeadersMessage headerLimit
+
+-- TODO: Update once we move to CBOR.
+instance MessageLimitedPure MsgSubscribe where
+    msgLenLimit = 0
+
+instance MessageLimited MsgSubscribe
 
 ----------------------------------------------------------------------------
 -- Arbitrary
@@ -352,7 +360,7 @@ instance MessageLimited (MsgHeaders ssc) where
 --     in  fromList <$> T.vectorOf k pairs
 
 -- | Given a limit for a list item, generate limit for a list with N elements
-vectorOf :: IsList l => Int -> Limit (Item l) -> Limit l
+vectorOf :: Int -> Limit (Item l) -> Limit l
 vectorOf k (Limit x) =
     Limit $ encodedListLength + x * (fromIntegral k)
   where
@@ -360,12 +368,11 @@ vectorOf k (Limit x) =
     encodedListLength = 20
 
 -- | Generate limit for a list of messages with N elements
-vector :: (IsList l, MessageLimitedPure (Item l)) => Int -> Limit l
+vector :: (MessageLimitedPure (Item l)) => Int -> Limit l
 vector k = vectorOf k msgLenLimit
 
 multiMap
-    :: (IsList l, Item l ~ (k, l0), IsList l0,
-        MessageLimitedPure k, MessageLimitedPure (Item l0))
+    :: (Item l ~ (k, l0), MessageLimitedPure k, MessageLimitedPure (Item l0))
     => Int -> Limit l
 multiMap k =
     -- max message length is reached when each key has single value

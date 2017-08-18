@@ -19,7 +19,7 @@ import           Pos.Block.Core       (Block, BlockHeader)
 import           Pos.Block.Slog       (SlogContext, mkSlogContext)
 import           Pos.Block.Types      (Undo)
 import           Pos.Context          (GenesisUtxo (..))
-import           Pos.Core             (Timestamp (..))
+import           Pos.Core             (HasCoreConstants, Timestamp (..))
 import           Pos.DB               (MonadBlockDBGeneric (..),
                                        MonadBlockDBGenericWrite (..), MonadDB (..),
                                        MonadDBRead (..))
@@ -29,6 +29,7 @@ import           Pos.DB.DB            (initNodeDBs)
 import           Pos.DB.Sum           (DBSum (..))
 import           Pos.GState           (GStateContext (..))
 import qualified Pos.GState           as GS
+import           Pos.KnownPeers       (MonadFormatPeers (..))
 import           Pos.Launcher         (newInitFuture)
 import           Pos.Lrc.Context      (LrcContext (..), mkLrcSyncData)
 import           Pos.Slotting         (HasSlottingVar (..))
@@ -44,12 +45,13 @@ data TBlockGenContext = TBlockGenContext
     }
 
 makeLensesWith postfixLFields ''TBlockGenContext
+
 type TBlockGenMode = ReaderT TBlockGenContext Production
 
 runTBlockGenMode :: TBlockGenContext -> TBlockGenMode a -> Production a
 runTBlockGenMode = flip Mtl.runReaderT
 
-initTBlockGenMode :: DB.NodeDBs -> GenesisUtxo -> TBlockGenMode a -> Production a
+initTBlockGenMode :: HasCoreConstants => DB.NodeDBs -> GenesisUtxo -> TBlockGenMode a -> Production a
 initTBlockGenMode nodeDBs genUtxo action = do
     let _gscDB = RealDB nodeDBs
     (_gscSlogContext, putSlogContext) <- newInitFuture
@@ -108,6 +110,7 @@ instance MonadDB TBlockGenMode where
     dbDelete = DB.dbDeleteSumDefault
 
 instance
+    HasCoreConstants =>
     MonadBlockDBGeneric (BlockHeader SscGodTossing) (Block SscGodTossing) Undo TBlockGenMode
   where
     dbGetBlock = BDB.dbGetBlockSumDefault @SscGodTossing
@@ -115,7 +118,11 @@ instance
     dbGetHeader = BDB.dbGetHeaderSumDefault @SscGodTossing
 
 instance
+    HasCoreConstants =>
     MonadBlockDBGenericWrite (BlockHeader SscGodTossing) (Block SscGodTossing) Undo TBlockGenMode
   where
     dbPutBlund = BDB.dbPutBlundSumDefault
 
+-- | In TBlockGenMode we don't have a queue available (we do no comms)
+instance MonadFormatPeers TBlockGenMode where
+    formatKnownPeers _ = return Nothing

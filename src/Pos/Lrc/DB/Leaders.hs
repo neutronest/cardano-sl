@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Leaders part of LRC DB.
 
@@ -20,9 +19,10 @@ import           Ether.Internal        (HasLens (..))
 
 import           Pos.Binary.Class      (serialize')
 import           Pos.Binary.Core       ()
-import           Pos.Context.Context   (GenesisUtxo)
 import           Pos.Context.Functions (genesisLeadersM)
+import           Pos.Core              (HasCoreConstants)
 import           Pos.DB.Class          (MonadDB, MonadDBRead)
+import           Pos.Genesis           (GenesisUtxo)
 import           Pos.Lrc.DB.Common     (getBi, putBi)
 import           Pos.Types             (EpochIndex, SlotLeaders)
 
@@ -45,7 +45,7 @@ putLeaders epoch = putBi (leadersKey epoch)
 ----------------------------------------------------------------------------
 
 prepareLrcLeaders ::
-       (MonadReader ctx m, HasLens GenesisUtxo ctx GenesisUtxo, MonadDB m)
+       (MonadReader ctx m, HasLens GenesisUtxo ctx GenesisUtxo, MonadDB m, HasCoreConstants)
     => m ()
 prepareLrcLeaders =
     whenNothingM_ (getLeaders 0) $

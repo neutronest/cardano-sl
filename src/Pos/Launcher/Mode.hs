@@ -1,6 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE TypeFamilies  #-}
+{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS -fno-warn-unused-top-binds #-} -- for lenses
 
 {- |
@@ -34,8 +33,7 @@ import           System.IO.Unsafe      (unsafeInterleaveIO)
 
 import           Pos.Block.Core        (Block, BlockHeader)
 import           Pos.Block.Types       (Undo)
-import           Pos.Context.Context   (GenesisUtxo)
-import           Pos.Core              (IsHeader, Timestamp)
+import           Pos.Core              (HasCoreConstants, IsHeader, Timestamp)
 import           Pos.DB                (NodeDBs)
 import           Pos.DB.Block          (dbGetBlockDefault, dbGetBlockSscDefault,
                                         dbGetHeaderDefault, dbGetHeaderSscDefault,
@@ -47,6 +45,7 @@ import           Pos.DB.Class          (MonadBlockDBGeneric (..),
 import           Pos.DB.Rocks          (dbDeleteDefault, dbGetDefault,
                                         dbIterSourceDefault, dbPutDefault,
                                         dbWriteBatchDefault)
+import           Pos.Genesis           (GenesisContext, GenesisUtxo, GenesisWStakeholders)
 import           Pos.Lrc.Context       (LrcContext)
 import           Pos.Slotting          (HasSlottingVar (..), SlottingData)
 import           Pos.Slotting.Class    (MonadSlots (..))
@@ -81,7 +80,7 @@ newInitFuture = do
 -- futures.
 data InitModeContext ssc = InitModeContext
     { imcNodeDBs            :: NodeDBs
-    , imcGenesisUtxo        :: GenesisUtxo
+    , imcGenesisContext     :: GenesisContext
     , imcSlottingVar        :: (Timestamp, TVar SlottingData)
     , imcSlottingContextSum :: SlottingContextSum
     , imcLrcContext         :: LrcContext
@@ -97,8 +96,14 @@ runInitMode = flip Mtl.runReaderT
 instance HasLens NodeDBs (InitModeContext ssc) NodeDBs where
     lensOf = imcNodeDBs_L
 
+instance HasLens GenesisContext (InitModeContext ssc) GenesisContext where
+    lensOf = imcGenesisContext_L
+
 instance HasLens GenesisUtxo (InitModeContext ssc) GenesisUtxo where
-    lensOf = imcGenesisUtxo_L
+    lensOf = imcGenesisContext_L . lensOf @GenesisUtxo
+
+instance HasLens GenesisWStakeholders (InitModeContext ssc) GenesisWStakeholders where
+    lensOf = imcGenesisContext_L . lensOf @GenesisWStakeholders
 
 instance HasLens SlottingContextSum (InitModeContext ssc) SlottingContextSum where
     lensOf = imcSlottingContextSum_L
@@ -120,19 +125,19 @@ instance MonadDB (InitMode ssc) where
     dbDelete = dbDeleteDefault
 
 instance
-    SscHelpersClass ssc =>
+    (HasCoreConstants, SscHelpersClass ssc) =>
     MonadBlockDBGeneric (BlockHeader ssc) (Block ssc) Undo (InitMode ssc)
   where
     dbGetBlock  = dbGetBlockDefault @ssc
     dbGetUndo   = dbGetUndoDefault @ssc
     dbGetHeader = dbGetHeaderDefault @ssc
 
-instance SscHelpersClass ssc =>
+instance (HasCoreConstants, SscHelpersClass ssc) =>
          MonadBlockDBGenericWrite (BlockHeader ssc) (Block ssc) Undo (InitMode ssc) where
     dbPutBlund = dbPutBlundDefault
 
 instance
-    SscHelpersClass ssc =>
+    (HasCoreConstants, SscHelpersClass ssc) =>
     MonadBlockDBGeneric (Some IsHeader) (SscBlock ssc) () (InitMode ssc)
   where
     dbGetBlock  = dbGetBlockSscDefault @ssc
@@ -145,7 +150,7 @@ instance MonadSlotsData (InitMode ssc) where
     waitPenultEpochEquals = waitPenultEpochEqualsDefault
     putSlottingData = putSlottingDataDefault
 
-instance MonadSlots (InitMode ssc) where
+instance HasCoreConstants => MonadSlots (InitMode ssc) where
     getCurrentSlot = getCurrentSlotSum
     getCurrentSlotBlocking = getCurrentSlotBlockingSum
     getCurrentSlotInaccurate = getCurrentSlotInaccurateSum

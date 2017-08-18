@@ -4,10 +4,8 @@ module Pos.Context.Functions
        (
          -- * Genesis
          GenesisUtxo(..)
-       , mkGenesisTxpContext
        , genesisUtxoM
        , genesisStakesM
-       , genesisStakeholdersM
        , genesisLeadersM
 
          -- * Block semaphore.
@@ -31,12 +29,12 @@ import           Data.Time           (diffUTCTime, getCurrentTime)
 import           Data.Time.Units     (Microsecond, fromMicroseconds)
 import           Ether.Internal      (HasLens (..))
 
-import           Pos.Context.Context (BlkSemaphore (..), GenesisStakeholders (..),
-                                      GenesisUtxo (..), StartTime (..))
-import           Pos.Core            (HeaderHash, SlotLeaders, StakeholderId, StakesMap)
-import           Pos.Genesis         (genesisLeaders)
+import           Pos.Context.Context (BlkSemaphore (..), StartTime (..))
+import           Pos.Core            (HasCoreConstants, HeaderHash, SlotLeaders,
+                                      StakesMap)
+import           Pos.Genesis         (GenesisUtxo (..), genesisLeaders)
 import           Pos.Lrc.Context     (lrcActionOnEpoch, lrcActionOnEpochReason, waitLrc)
-import           Pos.Txp.Toil        (mkGenesisTxpContext, utxoToStakes)
+import           Pos.Txp.Toil        (utxoToStakes)
 
 ----------------------------------------------------------------------------
 -- Genesis
@@ -52,13 +50,8 @@ genesisStakesM ::
     => m StakesMap
 genesisStakesM = views (lensOf @GenesisUtxo) $ utxoToStakes . unGenesisUtxo
 
-genesisStakeholdersM ::
-       (Functor m, MonadReader ctx m, HasLens GenesisStakeholders ctx GenesisStakeholders)
-    => m (HashSet StakeholderId)
-genesisStakeholdersM = views (lensOf @GenesisStakeholders) unGenesisStakeholders
-
 genesisLeadersM ::
-       (Functor m, MonadReader ctx m, HasLens GenesisUtxo ctx GenesisUtxo)
+       (Functor m, MonadReader ctx m, HasLens GenesisUtxo ctx GenesisUtxo, HasCoreConstants)
     => m SlotLeaders
 genesisLeadersM = genesisLeaders <$> genesisUtxoM
 

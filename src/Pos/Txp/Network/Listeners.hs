@@ -1,6 +1,5 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP        #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | Server which handles transactions.
 
@@ -21,6 +20,7 @@ import           Pos.Communication.Limits  ()
 import           Pos.Communication.Message ()
 import           Pos.Communication.Relay   (InvReqDataParams (..), MempoolParams (..),
                                             Relay (..))
+import           Pos.Communication.Types   (MsgType (..))
 import           Pos.Crypto                (hash)
 import           Pos.Txp.Core.Types        (TxAux (..), TxId)
 #ifdef WITH_EXPLORER
@@ -39,10 +39,11 @@ txInvReqDataParams :: WorkMode ssc ctx m
     => InvReqDataParams (Tagged TxMsgContents TxId) TxMsgContents m
 txInvReqDataParams =
     InvReqDataParams
-       { contentsToKey = txContentsToKey
-       , handleInv = txHandleInv
-       , handleReq = txHandleReq
-       , handleData = txHandleData
+       { invReqMsgType = MsgTransaction
+       , contentsToKey = txContentsToKey
+       , handleInv = \_ -> txHandleInv
+       , handleReq = \_ -> txHandleReq
+       , handleData = \_ -> txHandleData
        }
   where
     txContentsToKey = pure . Tagged . hash . taTx . getTxMsgContents

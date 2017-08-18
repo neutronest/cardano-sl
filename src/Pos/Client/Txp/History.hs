@@ -2,7 +2,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -12,9 +11,9 @@ module Pos.Client.Txp.History
        , thTx
        , thInputs
        , thDifficulty
-       , thInputAddrs
        , thOutputAddrs
        , thTimestamp
+       , _thInputAddrs
 
        , MonadTxHistory(..)
 
@@ -44,17 +43,19 @@ import qualified Data.Text.Buildable
 import qualified Ether
 import           Ether.Internal               (HasLens (..))
 import           Formatting                   (bprint, build, (%))
+import           Serokell.Util.Text           (listJson)
 import           System.Wlog                  (WithLogger)
 
 import           Pos.Block.Core               (Block, MainBlock, mainBlockSlot,
                                                mainBlockTxPayload)
 import           Pos.Block.Types              (Blund)
-import           Pos.Context                  (GenesisUtxo (..), genesisUtxoM)
+import           Pos.Context                  (genesisUtxoM)
 import           Pos.Core                     (Address, ChainDifficulty, HeaderHash,
                                                Timestamp (..), difficultyL)
 import           Pos.Crypto                   (WithHash (..), withHash)
 import           Pos.DB                       (MonadDBRead, MonadGState, MonadRealDB)
 import           Pos.DB.Block                 (MonadBlockDB)
+import           Pos.Genesis                  (GenesisUtxo (..), GenesisWStakeholders)
 import qualified Pos.GState                   as GS
 import           Pos.Slotting                 (MonadSlots, getSlotStartPure,
                                                getSystemStart)
@@ -64,13 +65,13 @@ import           Pos.Explorer.Txp.Local       (eTxProcessTransaction)
 #else
 import           Pos.Txp                      (txProcessTransaction)
 #endif
-import           Pos.Txp                      (GenesisStakeholders, MonadTxpMem,
-                                               MonadUtxo, MonadUtxoRead, ToilT, Tx (..),
-                                               TxAux (..), TxDistribution, TxId, TxOut,
-                                               TxOutAux (..), TxWitness, TxpError (..),
-                                               applyTxToUtxo, evalToilTEmpty,
-                                               flattenTxPayload, getLocalTxs, runDBToil,
-                                               topsortTxs, txOutAddress, utxoGet)
+import           Pos.Txp                      (MonadTxpMem, MonadUtxo, MonadUtxoRead,
+                                               ToilT, Tx (..), TxAux (..), TxDistribution,
+                                               TxId, TxOut, TxOutAux (..), TxWitness,
+                                               TxpError (..), applyTxToUtxo,
+                                               evalToilTEmpty, flattenTxPayload,
+                                               getLocalTxs, runDBToil, topsortTxs,
+                                               txOutAddress, utxoGet)
 import           Pos.Util                     (eitherToThrow, maybeThrow)
 import           Pos.WorkMode.Class           (TxpExtra_TMP)
 
@@ -91,18 +92,28 @@ getSenders UnsafeTx {..} = do
 data TxHistoryEntry = THEntry
     { _thTxId        :: !TxId
     , _thTx          :: !Tx
-    , _thInputs      :: ![TxOut]
     , _thDifficulty  :: !(Maybe ChainDifficulty)
-    , _thInputAddrs  :: ![Address]  -- TODO: remove in favor of _thInputs
+    , _thInputs      :: ![TxOut]
     , _thOutputAddrs :: ![Address]
     , _thTimestamp   :: !(Maybe Timestamp)
     } deriving (Show, Eq, Generic)
 
-instance Buildable TxHistoryEntry where
-    build THEntry{..} =
-        bprint ("TxId "%build%", timestamp "%build) _thTxId _thTimestamp
+-- | Remained for compatibility
+_thInputAddrs :: TxHistoryEntry -> [Address]
+_thInputAddrs = map txOutAddress . _thInputs
 
 makeLenses ''TxHistoryEntry
+
+instance Buildable TxHistoryEntry where
+    build THEntry {..} =
+        bprint
+            ("{ id="%build%" inputs="%listJson%" outputs="%listJson
+             %" diff="%build%" time="%build%" }")
+            _thTxId
+            _thInputs
+            _thOutputAddrs
+            _thDifficulty
+            _thTimestamp
 
 -- | Select transactions by predicate on related addresses
 getTxsByPredicate
@@ -118,12 +129,12 @@ getTxsByPredicate pr mDiff mTs txs = go txs []
     go ((wh@(WithHash tx txId), _wit, dist) : rest) acc = do
         inputs <- getSenders tx
         let outgoings = toList $ txOutAddress <$> _txOutputs tx
-        let incomings = ordNub $ map txOutAddress inputs
+        let incomings = map txOutAddress inputs
 
         applyTxToUtxo wh dist
 
         let acc' = if pr (incomings ++ outgoings)
-                   then (THEntry txId tx inputs mDiff incomings outgoings mTs : acc)
+                   then (THEntry txId tx mDiff inputs outgoings mTs : acc)
                    else acc
         go rest acc'
 
@@ -196,7 +207,7 @@ class (Monad m, SscHelpersClass ssc) => MonadTxHistory ssc m | m -> ssc where
     saveTx :: (TxId, TxAux) -> m ()
 
     default getBlockHistory
-        :: (SscHelpersClass ssc, MonadTrans t, MonadTxHistory ssc m', t m' ~ m)
+        :: (MonadTrans t, MonadTxHistory ssc m', t m' ~ m)
         => [Address] -> m (DList TxHistoryEntry)
     getBlockHistory = lift . getBlockHistory
 
@@ -221,7 +232,7 @@ type TxHistoryEnv ctx m =
     , MonadSlots m
     , MonadReader ctx m
     , HasLens GenesisUtxo ctx GenesisUtxo
-    , HasLens GenesisStakeholders ctx GenesisStakeholders
+    , HasLens GenesisWStakeholders ctx GenesisWStakeholders
     , MonadTxpMem TxpExtra_TMP ctx m
     , MonadBaseControl IO m
     )
@@ -273,4 +284,4 @@ saveTxDefault txw = do
 #else
     res <- runExceptT (txProcessTransaction txw)
 #endif
-    eitherToThrow identity res
+    eitherToThrow res

@@ -1,7 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE TypeOperators   #-}
 {-# OPTIONS -fno-warn-unused-top-binds #-} -- for lenses
 
 -- | Stack of monads used by light wallet.
@@ -23,14 +22,16 @@ import           Pos.Block.BListener              (MonadBListener (..), onApplyB
                                                    onRollbackBlocksStub)
 import           Pos.Block.Core                   (Block, BlockHeader)
 import           Pos.Block.Types                  (Undo)
+import           Pos.Client.Txp.Addresses         (MonadAddresses (..))
 import           Pos.Client.Txp.Balances          (MonadBalances (..), getBalanceDefault,
                                                    getOwnUtxosDefault)
 import           Pos.Client.Txp.History           (MonadTxHistory (..),
                                                    getBlockHistoryDefault,
                                                    getLocalHistoryDefault)
 import           Pos.Communication.Types.Protocol (NodeId)
-import           Pos.Core                         (HasPrimaryKey (..), IsHeader,
-                                                   SlotId (..))
+import           Pos.Core                         (Address, GenesisWStakeholders,
+                                                   HasCoreConstants, HasPrimaryKey (..),
+                                                   IsHeader, SlotId (..))
 import           Pos.DB                           (MonadGState (..))
 import           Pos.DB.Block                     (dbGetBlockDefault,
                                                    dbGetBlockSscDefault,
@@ -45,14 +46,12 @@ import           Pos.DB.DB                        (gsAdoptedBVDataDefault)
 import           Pos.DB.Rocks                     (NodeDBs, dbDeleteDefault, dbGetDefault,
                                                    dbIterSourceDefault, dbPutDefault,
                                                    dbWriteBatchDefault)
-import           Pos.Discovery                    (MonadDiscovery (..))
 import           Pos.Reporting.MemState           (ReportingContext)
 import           Pos.Slotting                     (MonadSlots (..),
                                                    currentTimeSlottingSimple)
 import           Pos.Slotting.MemState            (MonadSlotsData (..))
 import           Pos.Ssc.Class.Types              (SscBlock)
 import           Pos.Ssc.GodTossing               (SscGodTossing)
-import           Pos.Txp                          (GenesisStakeholders)
 import           Pos.Util                         (Some (..))
 import           Pos.Util.JsonLog                 (HasJsonLogConfig (..), JsonLogConfig,
                                                    jsonLogDefault)
@@ -78,7 +77,7 @@ data LightWalletContext = LightWalletContext
     , lwcDiscoveryPeers   :: !(Set NodeId)
     , lwcJsonLogConfig    :: !JsonLogConfig
     , lwcLoggerName       :: !LoggerName
-    , lwcGenStakeholders  :: !GenesisStakeholders
+    , lwcGenStakeholders  :: !GenesisWStakeholders
     }
 
 makeLensesWith postfixLFields ''LightWalletContext
@@ -91,7 +90,7 @@ type LightWalletMode = Mtl.ReaderT LightWalletContext Production
 instance HasUserSecret LightWalletContext where
     userSecret = lwcKeyData_L
 
-instance HasLens GenesisStakeholders LightWalletContext GenesisStakeholders where
+instance HasLens GenesisWStakeholders LightWalletContext GenesisWStakeholders where
     lensOf = lwcGenStakeholders_L
 
 instance HasLoggerName' LightWalletContext where
@@ -106,10 +105,6 @@ instance {-# OVERLAPPING #-} HasLoggerName LightWalletMode where
 
 instance {-# OVERLAPPING #-} CanJsonLog LightWalletMode where
     jsonLog = jsonLogDefault
-
-instance MonadDiscovery LightWalletMode where
-    getPeers = view lwcDiscoveryPeers_L
-    findPeers = view lwcDiscoveryPeers_L
 
 instance MonadBListener LightWalletMode where
     onApplyBlocks = onApplyBlocksStub
@@ -135,7 +130,7 @@ instance MonadSlotsData LightWalletMode where
     putSlottingData = error "notImplemented"
 
 -- FIXME: Dummy instance for lite-wallet.
-instance MonadSlots LightWalletMode where
+instance HasCoreConstants => MonadSlots LightWalletMode where
     getCurrentSlot = Just <$> getCurrentSlotInaccurate
     getCurrentSlotBlocking = getCurrentSlotInaccurate
     getCurrentSlotInaccurate = pure (SlotId 0 minBound)
@@ -172,7 +167,11 @@ instance MonadBalances LightWalletMode where
     getOwnUtxos = getOwnUtxosDefault
     getBalance = getBalanceDefault
 
-instance MonadTxHistory LightWalletSscType LightWalletMode where
+instance HasCoreConstants => MonadTxHistory LightWalletSscType LightWalletMode where
     getBlockHistory = getBlockHistoryDefault @LightWalletSscType
     getLocalHistory = getLocalHistoryDefault
     saveTx = saveTxWallet
+
+instance MonadAddresses LightWalletMode where
+    type AddrData LightWalletMode = Address
+    getNewAddress = pure

@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Core types. TODO: we need to have a meeting, come up with project
 -- structure and follow it.
@@ -12,7 +11,6 @@ module Pos.Core.Types
        , AddressHash
        , StakeholderId
        , StakesMap
-       , GenesisStakeholders (..)
 
        , Timestamp (..)
        , TimeDiff (..)
@@ -56,13 +54,12 @@ module Pos.Core.Types
        , coinPortionDenominator
        , mkCoinPortion
        , unsafeCoinPortionFromDouble
+       , maxCoinVal
 
        -- * Slotting
        , EpochIndex (..)
        , FlatSlotId
-       , LocalSlotIndex (getSlotIndex)
-       , mkLocalSlotIndex
-       , addLocalSlotIndex
+       , LocalSlotIndex (..)
        , SlotId (..)
        , siEpochL
        , siSlotL
@@ -83,7 +80,6 @@ module Pos.Core.Types
 import           Universum
 
 import           Control.Lens               (makeLensesFor, makePrisms)
-import           Control.Monad.Except       (MonadError (throwError))
 import           Crypto.Hash                (Blake2b_224)
 import           Data.Char                  (isAscii)
 import           Data.Data                  (Data)
@@ -102,7 +98,6 @@ import           Serokell.Data.Memory.Units (Byte)
 import           Serokell.Util.Base16       (formatBase16)
 import           System.Random              (Random (..))
 
-import           Pos.Core.Constants.Raw     (epochSlotsRaw)
 import           Pos.Core.Fee               (TxFeePolicy)
 import           Pos.Core.Timestamp         (TimeDiff (..), Timestamp (..))
 import           Pos.Crypto                 (AbstractHash, HDAddressPayload, Hash,
@@ -143,10 +138,6 @@ instance Default AddrPkAttrs where
 
 -- | A mapping between stakeholders and they stakes.
 type StakesMap = HashMap StakeholderId Coin
-
--- | Newtype over 'StakesMap' to be used in genesis.
-newtype GenesisStakeholders =
-    GenesisStakeholders { unGenesisStakeholders :: HashSet StakeholderId }
 
 ----------------------------------------------------------------------------
 -- ChainDifficulty
@@ -196,8 +187,7 @@ data SoftwareVersion = SoftwareVersion
 
 instance Buildable SoftwareVersion where
     build SoftwareVersion {..} =
-      bprint (stext % ":" % int)
-         (getApplicationName svAppName) svNumber
+        bprint (stext % ":" % int) (getApplicationName svAppName) svNumber
 
 instance Show SoftwareVersion where
     show = toString . pretty
@@ -325,10 +315,11 @@ instance Bounded Coin where
 maxCoinVal :: Word64
 maxCoinVal = 45000000000000000
 
--- FIXME: This operation is unsafe because it doesn't check 'maxCoinVal'.
 -- | Make Coin from Word64.
 mkCoin :: Word64 -> Coin
-mkCoin = Coin
+mkCoin c
+    | c <= maxCoinVal = Coin c
+    | otherwise       = error $ "mkCoin: " <> show c <> " is too large"
 {-# INLINE mkCoin #-}
 
 -- | Coin formatter which restricts type.
@@ -401,43 +392,9 @@ instance Buildable EpochIndex where
 --     build = bprint ("epochIndices: "%pairF)
 
 -- | Index of slot inside a concrete epoch.
-newtype LocalSlotIndex = LocalSlotIndex
+newtype LocalSlotIndex = UnsafeLocalSlotIndex
     { getSlotIndex :: Word16
     } deriving (Show, Eq, Ord, Ix, Generic, Hashable, Buildable, Typeable, NFData)
-
-instance Bounded LocalSlotIndex where
-    minBound = LocalSlotIndex 0
-    maxBound = LocalSlotIndex (epochSlotsRaw - 1)
-
-instance Enum LocalSlotIndex where
-    toEnum i | i >= epochSlotsRaw = error "toEnum @LocalSlotIndex: greater than maxBound"
-             | i < 0 = error "toEnum @LocalSlotIndex: less than minBound"
-             | otherwise = LocalSlotIndex (fromIntegral i)
-    fromEnum = fromIntegral . getSlotIndex
-
-instance Random LocalSlotIndex where
-    random = randomR (minBound, maxBound)
-    randomR (LocalSlotIndex lo, LocalSlotIndex hi) g =
-        let (r, g') = randomR (lo, hi) g
-        in  (LocalSlotIndex r, g')
-
-mkLocalSlotIndex :: MonadError Text m => Word16 -> m LocalSlotIndex
-mkLocalSlotIndex idx
-    | idx < epochSlotsRaw = pure (LocalSlotIndex idx)
-    | otherwise =
-        throwError $
-        "local slot is greater than or equal to the number of slots in epoch: " <>
-        show idx
-
--- | Shift slot index by given amount, and return 'Nothing' if it has
--- overflowed past 'epochSlots'.
-addLocalSlotIndex :: SlotCount -> LocalSlotIndex -> Maybe LocalSlotIndex
-addLocalSlotIndex x (LocalSlotIndex i)
-    | s < epochSlotsRaw = Just (LocalSlotIndex (fromIntegral s))
-    | otherwise         = Nothing
-  where
-    s :: Word64
-    s = fromIntegral x + fromIntegral i
 
 -- | Slot is identified by index of epoch and local index of slot in
 -- this epoch. This is a global index

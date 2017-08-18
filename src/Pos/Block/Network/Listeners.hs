@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Server which deals with blocks processing.
 
 module Pos.Block.Network.Listeners
@@ -30,7 +28,7 @@ import           Pos.WorkMode.Class         (WorkMode)
 blockListeners
     :: (SscWorkersClass ssc, WorkMode ssc ctx m)
     => MkListeners m
-blockListeners = constantListeners
+blockListeners = constantListeners $
     [ handleGetHeaders
     , handleGetBlocks
     , handleBlockHeaders

@@ -1,5 +1,4 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | Server listeners for delegation logic
 
@@ -9,31 +8,30 @@ module Pos.Delegation.Listeners
 
 import           Universum
 
-import           Control.Lens                  (views)
+import           Control.Lens               (views)
 import qualified Data.Text.Buildable
-import           Ether.Internal                (HasLens (..))
-import           Formatting                    (build, sformat, shown, (%))
-import           Serokell.Util.Text            (pairBuilder)
-import           System.Wlog                   (logDebug, logInfo)
+import           Ether.Internal             (HasLens (..))
+import           Formatting                 (build, sformat, shown, (%))
+import           Serokell.Util.Text         (pairBuilder)
+import           System.Wlog                (logDebug, logInfo)
 
-import           Pos.Binary                    ()
-import           Pos.Communication.Limits      ()
-import           Pos.Communication.Message     ()
-import           Pos.Communication.Relay       (DataParams (..), PropagationMsg (..),
-                                                Relay (..), addToRelayQueue)
-import           Pos.Communication.Relay.Types ()
-import           Pos.Context                   (BlkSemaphore (..))
-import           Pos.Core                      (getOurKeys)
-import           Pos.Crypto                    (SignTag (SignProxySK), proxySign,
-                                                pskDelegatePk)
-import           Pos.Delegation.Logic          (ConfirmPskLightVerdict (..),
-                                                PskHeavyVerdict (..),
-                                                PskLightVerdict (..),
-                                                processConfirmProxySk,
-                                                processProxySKHeavy, processProxySKLight)
-import           Pos.Delegation.Types          (ProxySKLightConfirmation)
-import           Pos.Types                     (ProxySKHeavy)
-import           Pos.WorkMode.Class            (WorkMode)
+import           Pos.Binary                 ()
+import           Pos.Communication.Limits   ()
+import           Pos.Communication.Message  ()
+import           Pos.Communication.Protocol (MsgType (..), Origin (..))
+import           Pos.Communication.Relay    (DataParams (..), PropagationMsg (..),
+                                             Relay (..), propagateData)
+import           Pos.Context                (BlkSemaphore (..))
+import           Pos.Core                   (getOurKeys)
+import           Pos.Crypto                 (SignTag (SignProxySK), proxySign,
+                                             pskDelegatePk)
+import           Pos.Delegation.Logic       (ConfirmPskLightVerdict (..),
+                                             PskHeavyVerdict (..), PskLightVerdict (..),
+                                             processConfirmProxySk, processProxySKHeavy,
+                                             processProxySKLight)
+import           Pos.Delegation.Types       (ProxySKLightConfirmation)
+import           Pos.Types                  (ProxySKHeavy)
+import           Pos.WorkMode.Class         (WorkMode)
 
 instance Buildable ProxySKLightConfirmation where
     build = pairBuilder
@@ -51,7 +49,7 @@ delegationRelays =
 pskLightRelay
     :: WorkMode ssc ctx m
     => Relay m
-pskLightRelay = Data $ DataParams $ \pSk -> do
+pskLightRelay = Data $ DataParams MsgTransaction $ \enqueue _ pSk -> do
     logDebug $ sformat ("Got request to handle lightweight psk: "%build) pSk
     verdict <- processProxySKLight pSk
     logResult pSk verdict
@@ -64,7 +62,12 @@ pskLightRelay = Data $ DataParams $ \pSk -> do
                logDebug $
                    sformat ("Generating delivery proof and propagating it to neighbors: "%build) pSk
                let proof = proxySign SignProxySK sk pSk pSk
-               addToRelayQueue (DataOnlyPM (pSk, proof))
+               -- FIXME seems like a mistake. Shouldn't the relay subsystem
+               -- take care of deiciding when to relay?
+               -- This is here to bypass the unused import/variable warnings
+               -- until I get around to fixing this. We'll have to get a hold
+               -- of some SendActions here. Highly dodgy.
+               void $ propagateData enqueue (DataOnlyPM (MsgTransaction OriginSender) (pSk, proof))
                pure False
            else pure True
         _ -> pure False
@@ -82,7 +85,7 @@ pskLightRelay = Data $ DataParams $ \pSk -> do
 pskHeavyRelay
     :: WorkMode ssc ctx m
     => Relay m
-pskHeavyRelay = Data $ DataParams $ handlePsk
+pskHeavyRelay = Data $ DataParams MsgTransaction $ \_ _ -> handlePsk
   where
     handlePsk :: forall ssc ctx m. WorkMode ssc ctx m => ProxySKHeavy -> m Bool
     handlePsk pSk = do
@@ -103,7 +106,7 @@ pskHeavyRelay = Data $ DataParams $ handlePsk
 confirmPskRelay
     :: WorkMode ssc ctx m
     => Relay m
-confirmPskRelay = Data $ DataParams $ \(pSk, proof) -> do
+confirmPskRelay = Data $ DataParams MsgTransaction $ \_ _ (pSk, proof) -> do
     verdict <- processConfirmProxySk pSk proof
     pure $ case verdict of
         CPValid -> True
