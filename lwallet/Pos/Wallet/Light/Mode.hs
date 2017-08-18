@@ -52,6 +52,7 @@ import           Pos.Slotting                     (MonadSlots (..),
 import           Pos.Slotting.MemState            (MonadSlotsData (..))
 import           Pos.Ssc.Class.Types              (SscBlock)
 import           Pos.Ssc.GodTossing               (SscGodTossing)
+import           Pos.Txp                          (GenesisUtxo)
 import           Pos.Util                         (Some (..))
 import           Pos.Util.JsonLog                 (HasJsonLogConfig (..), JsonLogConfig,
                                                    jsonLogDefault)
@@ -78,6 +79,7 @@ data LightWalletContext = LightWalletContext
     , lwcJsonLogConfig    :: !JsonLogConfig
     , lwcLoggerName       :: !LoggerName
     , lwcGenStakeholders  :: !GenesisWStakeholders
+    , lwcGenUtxo          :: !GenesisUtxo
     }
 
 makeLensesWith postfixLFields ''LightWalletContext
@@ -92,6 +94,9 @@ instance HasUserSecret LightWalletContext where
 
 instance HasLens GenesisWStakeholders LightWalletContext GenesisWStakeholders where
     lensOf = lwcGenStakeholders_L
+
+instance HasLens GenesisUtxo LightWalletContext GenesisUtxo where
+    lensOf = lwcGenUtxo_L
 
 instance HasLoggerName' LightWalletContext where
     loggerName = lwcLoggerName_L
@@ -145,16 +150,16 @@ instance MonadDB LightWalletMode where
     dbWriteBatch = dbWriteBatchDefault
     dbDelete = dbDeleteDefault
 
-instance MonadBlockDBGenericWrite (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode where
+instance HasCoreConstants => MonadBlockDBGenericWrite (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode where
     dbPutBlund = dbPutBlundDefault
 
-instance MonadBlockDBGeneric (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode
+instance HasCoreConstants => MonadBlockDBGeneric (BlockHeader LightWalletSscType) (Block LightWalletSscType) Undo LightWalletMode
   where
     dbGetBlock  = dbGetBlockDefault @LightWalletSscType
     dbGetUndo   = dbGetUndoDefault @LightWalletSscType
     dbGetHeader = dbGetHeaderDefault @LightWalletSscType
 
-instance MonadBlockDBGeneric (Some IsHeader) (SscBlock LightWalletSscType) () LightWalletMode
+instance HasCoreConstants => MonadBlockDBGeneric (Some IsHeader) (SscBlock LightWalletSscType) () LightWalletMode
   where
     dbGetBlock  = dbGetBlockSscDefault @LightWalletSscType
     dbGetUndo   = dbGetUndoSscDefault @LightWalletSscType
