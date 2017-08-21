@@ -20,18 +20,19 @@ import           System.Wlog                      (HasLoggerName (..), LoggerNam
 
 import           Pos.Block.BListener              (MonadBListener (..), onApplyBlocksStub,
                                                    onRollbackBlocksStub)
+import           Pos.Wallet.Light.State.Acidic    (WalletState)
+
 import           Pos.Block.Core                   (Block, BlockHeader)
 import           Pos.Block.Types                  (Undo)
 import           Pos.Client.Txp.Addresses         (MonadAddresses (..))
-import           Pos.Client.Txp.Balances          (MonadBalances (..), getBalanceDefault,
-                                                   getOwnUtxosDefault)
+import           Pos.Client.Txp.Balances          (MonadBalances (..), getBalanceDefault)
 import           Pos.Client.Txp.History           (MonadTxHistory (..),
                                                    getBlockHistoryDefault,
                                                    getLocalHistoryDefault)
 import           Pos.Communication.Types.Protocol (NodeId)
 import           Pos.Core                         (Address, GenesisWStakeholders,
-                                                   HasCoreConstants, HasPrimaryKey (..),
-                                                   IsHeader, SlotId (..))
+                                                   HasCoreConstants, IsHeader,
+                                                   SlotId (..))
 import           Pos.DB                           (MonadGState (..))
 import           Pos.DB.Block                     (dbGetBlockDefault,
                                                    dbGetBlockSscDefault,
@@ -53,6 +54,8 @@ import           Pos.Slotting.MemState            (MonadSlotsData (..))
 import           Pos.Ssc.Class.Types              (SscBlock)
 import           Pos.Ssc.GodTossing               (SscGodTossing)
 import           Pos.Txp                          (GenesisUtxo)
+import           Pos.Txp.MemState                 (GenericTxpLocalData, TxpHolderTag,
+                                                   TxpMetrics)
 import           Pos.Util                         (Some (..))
 import           Pos.Util.JsonLog                 (HasJsonLogConfig (..), JsonLogConfig,
                                                    jsonLogDefault)
@@ -63,21 +66,23 @@ import           Pos.Util.TimeWarp                (CanJsonLog (..))
 import           Pos.Util.UserSecret              (HasUserSecret (..))
 import           Pos.Util.Util                    (postfixLFields)
 import           Pos.Wallet.KeyStorage            (KeyData)
-import           Pos.Wallet.Light.Redirect        (saveTxWallet)
-import           Pos.Wallet.Light.State.Core      (gsAdoptedBVDataWallet)
+import           Pos.Wallet.Light.Redirect        (getOwnUtxosWallet, saveTxWallet)
 import           Pos.Wallet.WalletMode            (MonadBlockchainInfo (..),
                                                    MonadUpdates (..))
+import           Pos.WorkMode                     (TxpExtra_TMP)
 
 type LightWalletSscType = SscGodTossing
 -- type LightWalletSscType = SscNistBeacon
 
 data LightWalletContext = LightWalletContext
     { lwcKeyData          :: !KeyData
+    , lwcWalletState      :: !WalletState
     , lwcNodeDBs          :: !NodeDBs
     , lwcReportingContext :: !ReportingContext
     , lwcDiscoveryPeers   :: !(Set NodeId)
     , lwcJsonLogConfig    :: !JsonLogConfig
     , lwcLoggerName       :: !LoggerName
+    , lwcTxpLocalData     :: !(GenericTxpLocalData TxpExtra_TMP, TxpMetrics)
     , lwcGenStakeholders  :: !GenesisWStakeholders
     , lwcGenUtxo          :: !GenesisUtxo
     }
@@ -97,6 +102,10 @@ instance HasLens GenesisWStakeholders LightWalletContext GenesisWStakeholders wh
 
 instance HasLens GenesisUtxo LightWalletContext GenesisUtxo where
     lensOf = lwcGenUtxo_L
+
+instance HasLens TxpHolderTag LightWalletContext ( GenericTxpLocalData TxpExtra_TMP
+                                                 , TxpMetrics) where
+    lensOf = lwcTxpLocalData_L
 
 instance HasLoggerName' LightWalletContext where
     loggerName = lwcLoggerName_L
@@ -169,7 +178,7 @@ instance MonadGState LightWalletMode where
     gsAdoptedBVData = gsAdoptedBVDataDefault
 
 instance MonadBalances LightWalletMode where
-    getOwnUtxos = getOwnUtxosDefault
+    getOwnUtxos = getOwnUtxosWallet
     getBalance = getBalanceDefault
 
 instance HasCoreConstants => MonadTxHistory LightWalletSscType LightWalletMode where

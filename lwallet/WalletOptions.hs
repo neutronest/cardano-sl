@@ -27,6 +27,7 @@ import           Pos.Communication            (NodeId)
 
 data WalletOptions = WalletOptions
     { woDbPath      :: !FilePath
+    , woNodeDbPath  :: !FilePath
     , woRebuildDb   :: !Bool
     , woKeyFilePath :: !FilePath       -- ^ Path to file with secret keys
     , woDebug       :: !Bool           -- ^ Run in debug mode (with genesis keys included)
@@ -74,6 +75,11 @@ argsParser = do
         metavar "FILEPATH" <>
         value   "wallet-db" <>
         help    "Path to the wallet database."
+    woNodeDbPath <- strOption $
+        long    "node-db-path" <>
+        metavar "FILEPATH" <>
+        value   "node-db" <>
+        help    "Path to the node database"
     woRebuildDb <- switch $
         long "rebuild-db" <>
         help "If the DB already exist, discard its contents and \

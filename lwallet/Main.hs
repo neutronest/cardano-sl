@@ -433,6 +433,7 @@ main = giveStaticConsts $ do
     let params =
             WalletParams
             { wpDbPath      = Just woDbPath
+            , wpNodeDbPath  = woNodeDbPath
             , wpRebuildDb   = woRebuildDb
             , wpKeyFilePath = woKeyFilePath
             , wpSystemStart = sysStart

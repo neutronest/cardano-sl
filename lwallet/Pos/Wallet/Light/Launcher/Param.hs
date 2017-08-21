@@ -10,6 +10,7 @@ import           Pos.Types    (Timestamp)
 
 data WalletParams = WalletParams
     { wpDbPath         :: !(Maybe FilePath)
+    , wpNodeDbPath     :: !FilePath
     , wpRebuildDb      :: !Bool
     , wpKeyFilePath    :: !FilePath
     , wpSystemStart    :: Timestamp  -- System start is not defined now

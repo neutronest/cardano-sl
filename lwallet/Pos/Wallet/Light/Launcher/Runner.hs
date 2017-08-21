@@ -24,6 +24,8 @@ import           Pos.Launcher                    (BaseParams (..), LoggingParams
 import           Pos.Network.Types               (NetworkConfig, Topology (..),
                                                   defaultNetworkConfig)
 import           Pos.Reporting.MemState          (emptyReportingContext)
+import           Pos.Txp.MemState                (GenericTxpLocalData, askTxpMem,
+                                                  getLocalTxs, ignoreTxpMetrics)
 import           Pos.Util.JsonLog                (JsonLogConfig (..))
 import           Pos.Util.Util                   ()
 import           Pos.Wallet.KeyStorage           (keyDataFromFile)
@@ -86,23 +88,36 @@ runRawStaticPeersWallet
     -> (ActionSpec LightWalletMode a, OutSpecs)
     -> Production a
 runRawStaticPeersWallet networkConfig transport peers WalletParams {..}
-                        listeners (ActionSpec action, outs) = do
-    keyData <- keyDataFromFile wpKeyFilePath
-    oq <- initQueue networkConfig Nothing
-    db <- DB.getNodeDBs
-    flip Mtl.runReaderT
-        ( LightWalletContext
-            keyData
-            db
-            emptyReportingContext
-            peers
-            JsonLogDisabled
-            lpRunnerTag
-            (wpGenesisContext ^. gtcWStakeholders)
-            (wpGenesisContext ^. gtcUtxo)
-        ) .
-        runServer_ transport listeners outs oq . ActionSpec $ \vI sa ->
-        logInfo "Started wallet, joining network" >> action vI sa
+                        listeners (ActionSpec action, outs) =
+    bracket openDB closeDB $ \state -> do
+        keyData <- keyDataFromFile wpKeyFilePath
+        oq <- initQueue networkConfig Nothing
+        db <- DB.openNodeDBs False wpNodeDbPath
+        txpLocalData <- askTxpMem
+        flip Mtl.runReaderT
+            ( LightWalletContext
+                keyData
+                state
+                db
+                emptyReportingContext
+                peers
+                JsonLogDisabled
+                lpRunnerTag
+                (txpLocalData, ignoreTxpMetrics)
+                (wpGenesisContext ^. gtcWStakeholders)
+                wpGenesisUtxo
+            ) .
+            runServer_ transport listeners outs oq . ActionSpec $ \vI sa ->
+            logInfo "Started wallet, joining network" >> action vI sa
+  where
+    LoggingParams {..} = bpLoggingParams wpBaseParams
+    wpGenesisUtxo = wpGenesisContext ^. gtcUtxo
+    openDB =
+        maybe
+            (openMemState wpGenesisUtxo)
+            (openState wpRebuildDb wpGenesisUtxo)
+            wpDbPath
+    closeDB = closeState
 
 runServer_
     :: (MonadIO m, MonadMockable m, MonadFix m, WithLogger m)
