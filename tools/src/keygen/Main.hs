@@ -3,6 +3,8 @@ module Main
        ( main
        ) where
 
+import           Universum
+
 import           Control.Lens          ((?~))
 import           Data.Aeson            (eitherDecode)
 import qualified Data.ByteString.Lazy  as BSL
@@ -18,7 +20,6 @@ import           System.FilePath.Glob  (glob)
 import           System.Wlog           (Severity (Debug), WithLogger, consoleOutB,
                                         lcTermSeverity, logError, logInfo, setupLogging,
                                         usingLoggerName)
-import           Universum
 
 import           Pos.Binary            (asBinary, decodeFull, serialize')
 import           Pos.Core              (StakeholderId, addressDetailedF, addressHash,
@@ -27,11 +28,12 @@ import           Pos.Crypto            (EncryptedSecretKey (..), VssKeyPair, red
                                         toVssPublicKey)
 import           Pos.Crypto.Signing    (SecretKey (..), toPublic)
 import           Pos.Genesis           (AddrDistribution, GenesisCoreData (..),
-                                        GenesisGtData (..), StakeDistribution (..),
-                                        genesisDevHdwSecretKeys, genesisDevSecretKeys,
-                                        mkGenesisCoreData)
+                                        GenesisDelegation (..), GenesisGtData (..),
+                                        StakeDistribution (..), genesisDevHdwSecretKeys,
+                                        genesisDevSecretKeys, mkGenesisCoreData)
 import           Pos.Util.UserSecret   (readUserSecret, usKeys, usPrimKey, usVss,
                                         usWalletSet)
+import           Pos.Util.Util         (leftToPanic)
 import           Pos.Wallet.Web.Secret (wusRootKey)
 
 import           Avvm                  (aeCoin, applyBlacklisted, avvmAddrDistribution,
@@ -244,9 +246,11 @@ genGenesisFiles GenesisGenOptions{..} = do
               \enabled it can't work (with testnet case we take richmen as bootst.). \
               \See CSL-1315"
     let genCoreData =
-            either (\e -> error $ "Couldn't create genesis core data: " <> fromString e)
-                   identity
-                   (mkGenesisCoreData gcdAddrDistribution gcdBootstrapStakeholders)
+            leftToPanic "Couldn't create genesis core data: " $
+                mkGenesisCoreData
+                    gcdAddrDistribution
+                    gcdBootstrapStakeholders
+                    (UnsafeGenesisDelegation mempty)
 
     ------ Generating GT core data
 

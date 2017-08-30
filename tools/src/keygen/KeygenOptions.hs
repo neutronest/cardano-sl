@@ -59,6 +59,8 @@ data GenesisGenOptions = GenesisGenOptions
       -- weights (@[(A, 5), (B, 2), (C, 3)]@). Setting this
       -- overrides default settings for boot stakeholders (e.g. rich
       -- in testnet stakes).
+    , ggoDelegation       :: !()
+    -- ^ Explicit genesis delegation (map from issuers to delegates).
     } deriving (Show)
 
 data TestStakeOptions = TestStakeOptions
@@ -141,6 +143,7 @@ genesisGenParser = do
     ggoAvvmStake <- optional avvmStakeParser
     ggoFakeAvvmStake <- optional fakeAvvmParser
     ggoBootStakeholders <- many bootStakeholderParser
+    ggoDelegation <- pass -- HM.fromList <$> many stakeholderPairParser
     pure $ GenesisGenOptions{..}
 
 testStakeParser :: Parser TestStakeOptions
@@ -207,7 +210,7 @@ bootStakeholderParser :: Parser (StakeholderId, Word16)
 bootStakeholderParser =
     option (fromParsec pairParser) $
         long "bootstakeholder" <>
-        metavar "ADDRESS,INTEGER" <>
+        metavar "STAKEHOLDER_ID,INTEGER" <>
         help "Explicit boot stakeholder with his stake weight for the boot era."
   where
     pairParser :: P.Parser (StakeholderId, Word16)
@@ -226,6 +229,19 @@ bootStakeholderParser =
         maybe (fail $ show val <> " is not a valid word16")
               (pure . fromInteger)
               val
+
+-- stakeholderPairParser :: Parser (StakeholderId, StakeholderId)
+-- stakeholderPairParser =
+--     option (fromParsec pairParser) $
+--     mconcat
+--         [ long "dlg"
+--         , metavar "STAKEHOLDER_ID:STAKEHOLDER_ID"
+--         , help "Explicit genesis delegation (issuer:delegate)"
+--         ]
+--   where
+--     pairParser :: P.Parser (StakeholderId, StakeholderId)
+--     pairParser =
+--         (,) <$> stakeholderIdParser <*> (P.char ':' *> stakeholderIdParser)
 
 getKeygenOptions :: IO KeygenOptions
 getKeygenOptions = execParser programInfo
