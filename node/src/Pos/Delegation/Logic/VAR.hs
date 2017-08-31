@@ -47,7 +47,7 @@ import           Pos.Delegation.Cede          (CedeModifier, DlgEdgeAction (..),
                                                dlgReachesIssuance, evalMapCede,
                                                getPskChain, getPskPk, modPsk,
                                                pskToDlgEdgeAction, runDBCede)
-import           Pos.Delegation.Class         (MonadDelegation, dwEpochId, dwProxySKPool)
+import           Pos.Delegation.Class         (MonadDelegation, dwProxySKPool, dwTip)
 import           Pos.Delegation.Helpers       (isRevokePsk)
 import           Pos.Delegation.Logic.Common  (DelegationError (..),
                                                runDelegationStateAction)
@@ -59,6 +59,7 @@ import           Pos.Delegation.Types         (DlgPayload (getDlgPayload), DlgUn
 import qualified Pos.GState                   as GS
 import           Pos.Lrc.Context              (LrcContext)
 import qualified Pos.Lrc.DB                   as LrcDB
+import           Pos.Ssc.Class.Helpers        (SscHelpersClass)
 import           Pos.Util                     (HasLens', getKeys, _neHead)
 import           Pos.Util.Chrono              (NE, NewestFirst (..), OldestFirst (..))
 
@@ -484,6 +485,8 @@ dlgApplyBlocks ::
        , MonadDBRead m
        , WithLogger m
        , MonadMask m
+       , HasCoreConstants
+       , SscHelpersClass ssc
        )
     => OldestFirst NE (Blund ssc)
     -> m (NonEmpty SomeBatchOp)
@@ -503,7 +506,7 @@ dlgApplyBlocks blunds = do
         runDelegationStateAction $ do
             -- all possible psks candidates are now invalid because epoch changed
             clearDlgMemPoolAction
-            dwEpochId .= (block ^. epochIndexL)
+            dwTip .= headerHash block
         -- For genesis blocks, dlg undo is richmen that lost their stake.
         -- So we delete all these guys.
         let edgeActions = map (DlgEdgeDel . addressHash . pskIssuerPk) duPsks
@@ -523,7 +526,7 @@ dlgApplyBlocks blunds = do
         transCorrections <- calculateTransCorrections $ HS.fromList edgeActions
         let batchOps = SomeBatchOp (map GS.PskFromEdgeAction edgeActions) <> transCorrections
         runDelegationStateAction $ do
-            dwEpochId .= block ^. epochIndexL
+            dwTip .= headerHash block
             forM_ issuers deleteFromDlgMemPool
         pure $ SomeBatchOp batchOps
 
@@ -557,7 +560,8 @@ dlgRollbackBlocks blunds = do
         let postedOp = SomeBatchOp $ map (GS.DelPostedThisEpoch . addressHash) issuers
         pure $ pskOp <> postedOp
 
--- | Normalizes the memory state after the rollback.
+-- | Normalizes the memory state after the rollback. Must be called
+-- only when 'BlkSemaphore' is taken.
 dlgNormalizeOnRollback ::
        forall ssc ctx m.
        ( MonadDelegation ctx m
@@ -568,19 +572,21 @@ dlgNormalizeOnRollback ::
        , HasLens' ctx LrcContext
        , Mockable CurrentTime m
        , WithLogger m
+       , HasCoreConstants
+       , SscHelpersClass ssc
        )
     => m ()
 dlgNormalizeOnRollback = do
     tip <- DB.getTipHeader @ssc
     oldPool <- runDelegationStateAction $ do
-        dwEpochId .= (tip ^. epochIndexL)
         pool <- uses dwProxySKPool toList
         dwProxySKPool .= mempty
         pure pool
     forM_ oldPool $ \psk -> do
-      res <- processProxySKHeavyInternal @ssc psk
-      -- should we throw error here also?
-      when (res /= PHAdded) $ logError $
-          sformat ("dlgNormalizeOnRollback: got psk verdict "%shown%" for psk "%build)
-                  res
-                  psk
+        res <- processProxySKHeavyInternal @ssc psk
+        -- should we throw error here also?
+        when (res /= PHAdded) $ logError $
+            sformat ("dlgNormalizeOnRollback: got psk verdict "%shown%" for psk "%build)
+                    res
+                    psk
+    runDelegationStateAction $ dwTip .= headerHash tip

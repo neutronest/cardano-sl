@@ -39,10 +39,10 @@ import           Pos.Binary.Class            (biSize)
 import           Pos.Binary.Communication    ()
 import           Pos.Constants               (memPoolLimitRatio)
 import           Pos.Context                 (lrcActionOnEpochReason)
-import           Pos.Core                    (HasPrimaryKey (..), ProxySKHeavy,
-                                              ProxySKLight, ProxySigLight, addressHash,
-                                              bvdMaxBlockSize, epochIndexL,
-                                              getOurPublicKey)
+import           Pos.Core                    (HasCoreConstants, HasPrimaryKey (..),
+                                              ProxySKHeavy, ProxySKLight, ProxySigLight,
+                                              addressHash, bvdMaxBlockSize, epochIndexL,
+                                              getOurPublicKey, headerHash)
 import           Pos.Crypto                  (ProxySecretKey (..), PublicKey,
                                               SignTag (SignProxySK), proxyVerify,
                                               verifyPsk)
@@ -55,8 +55,8 @@ import qualified Pos.DB.Misc                 as Misc
 import           Pos.Delegation.Cede         (detectCycleOnAddition, evalMapCede,
                                               pskToDlgEdgeAction)
 import           Pos.Delegation.Class        (DlgMemPool, MonadDelegation,
-                                              dwConfirmationCache, dwEpochId,
-                                              dwMessageCache, dwPoolSize, dwProxySKPool)
+                                              dwConfirmationCache, dwMessageCache,
+                                              dwPoolSize, dwProxySKPool, dwTip)
 import           Pos.Delegation.Helpers      (isRevokePsk)
 import           Pos.Delegation.Logic.Common (DelegationStateAction,
                                               runDelegationStateAction)
@@ -127,7 +127,7 @@ data PskHeavyVerdict
     | PHInvalid Text -- ^ Can't accept PSK though it's most probably user's error
     | PHBroken       -- ^ Broken (signature, most probably attack, we can ban for this)
     | PHCached       -- ^ Message is cached
-    | PHIncoherent   -- ^ Verdict can't be made at the moment (we're updating)
+    | PHTipMismatch  -- ^ Verdict can't be made at the moment, mempool tip is different from db one
     | PHExhausted    -- ^ Memory pool is exhausted and can't accept more data
     | PHRemoved      -- ^ Revoked previous psk from the mempool
     | PHAdded        -- ^ Successfully processed/added to psk mempool
@@ -148,6 +148,7 @@ processProxySKHeavy
        , HasLens' ctx LrcContext
        , HasLens' ctx BlkSemaphore
        , Mockable CurrentTime m
+       , HasCoreConstants
        )
     => ProxySKHeavy -> m PskHeavyVerdict
 processProxySKHeavy psk =
@@ -167,11 +168,14 @@ processProxySKHeavyInternal
        , MonadReader ctx m
        , HasLens' ctx LrcContext
        , Mockable CurrentTime m
+       , HasCoreConstants
        )
     => ProxySKHeavy -> m PskHeavyVerdict
 processProxySKHeavyInternal psk = do
     curTime <- microsecondsToUTC <$> currentTime
-    headEpoch <- view epochIndexL <$> DB.getTipHeader @ssc
+    dbTip <- DB.getTipHeader @ssc
+    let dbTipHash = headerHash dbTip
+    let headEpoch = dbTip ^. epochIndexL
     richmen <-
         lrcActionOnEpochReason
         headEpoch
@@ -209,16 +213,16 @@ processProxySKHeavyInternal psk = do
         posted <- uses dwProxySKPool (\m -> isJust $ HM.lookup iPk m)
         existsSame <- uses dwProxySKPool (\m -> HM.lookup iPk m == Just psk)
         cached <- isJust . snd . LRU.lookup msg <$> use dwMessageCache
-        epochMatches <- (headEpoch ==) <$> use dwEpochId
         let isRevoke = isRevokePsk psk
         let rerevoke = isRevoke && not hasPskInDB
+        coherent <- uses dwTip $ (==) dbTipHash
         dwMessageCache %= LRU.insert msg curTime
         let maxMemPoolSize = memPoolLimitRatio * maxBlockSize
             -- Here it would be good to add size of data we want to insert
             -- but it's negligible.
             exhausted = memPoolSize >= maxMemPoolSize
         let res = if | not consistent -> PHBroken
-                     | not epochMatches -> PHIncoherent
+                     | not coherent -> PHTipMismatch
                      | not omegaCorrect -> PHInvalid "PSK epoch is different from current"
                      | alreadyPosted -> PHInvalid "issuer has already posted PSK this epoch"
                      | rerevoke ->

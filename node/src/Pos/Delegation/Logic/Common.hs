@@ -29,8 +29,8 @@ import           Formatting           (bprint, build, sformat, stext, (%))
 
 import           Pos.Constants        (dlgCacheParam, lightDlgConfirmationTimeout,
                                        messageCacheTimeout)
-import           Pos.Core             (ProxySKHeavy, StakeholderId, addressHash,
-                                       epochIndexL)
+import           Pos.Core             (HasCoreConstants, ProxySKHeavy, StakeholderId,
+                                       addressHash, headerHash)
 import           Pos.Crypto           (ProxySecretKey (..), PublicKey)
 import           Pos.DB               (DBError (DBMalformed), MonadDBRead)
 import qualified Pos.DB.Block         as DB
@@ -102,7 +102,7 @@ invalidateProxyCaches curTime = do
 -- * Sets '_dwEpochId' to epoch of tip.
 -- * Initializes mempools/LRU caches.
 mkDelegationVar ::
-       forall ssc m. (MonadIO m, DB.MonadBlockDB ssc m)
+       forall ssc m. (MonadIO m, DB.MonadBlockDB ssc m, HasCoreConstants)
     => m DelegationVar
 mkDelegationVar = do
     tip <- DB.getTipHeader @ssc
@@ -112,7 +112,7 @@ mkDelegationVar = do
         , _dwConfirmationCache = LRU.newLRU confCacheLimit
         , _dwProxySKPool = HM.empty
         , _dwPoolSize = 1 -- approximate size of the empty mempool.
-        , _dwEpochId = tip ^. epochIndexL
+        , _dwTip = headerHash tip
         }
   where
     msgCacheLimit = Just dlgCacheParam
